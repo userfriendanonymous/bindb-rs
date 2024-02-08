@@ -117,7 +117,7 @@ impl<T: Instance> Instance for Option<T> {
                 bytes[0] = 1;
                 v.encode(&mut bytes[1..]);
             }
-            None => bytes[0] = 0
+            None => bytes.fill(0)
         };
     }
 

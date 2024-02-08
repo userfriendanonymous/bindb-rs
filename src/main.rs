@@ -21,7 +21,7 @@ fn benchmark<R>(msg: &'static str, f: impl FnOnce() -> R) -> R {
 }
 
 fn main() {
-    let mut db = benchmark("Open", || Collection::new("test_db").unwrap());
+    let mut db = benchmark("Open", || Collection::new("./local/test_db").unwrap());
 
     let total = 1000000;
 
@@ -44,6 +44,18 @@ fn main() {
         for i in 0 .. total {
             db.get(entry::Id::from(i), Lens::to_self()).unwrap();
         }
+    });
+
+    let item = benchmark("find_exact", || {
+        db.find_exact(Item::bar(), &(total - 10)).unwrap()
+    });
+
+    let item = benchmark("find", || {
+        db.find(Item::bar(), |&x| x >= total - 10).unwrap()
+    });
+
+    let item = benchmark("find_full", || {
+        db.find(Lens::to_self(), |x| x.bar >= total - 10).unwrap()
     });
 
     benchmark("set", || {
