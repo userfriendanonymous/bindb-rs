@@ -16,6 +16,18 @@ pub enum AddError {
 }
 
 #[derive(Debug)]
+pub enum RemoveLastError {
+    Fmmap(fmmap::error::Error),
+    Io(std::io::Error),
+}
+
+#[derive(Debug)]
+pub enum SwapRemoveError {
+    RemoveLastError(RemoveLastError),
+    Fmmap(fmmap::error::Error)
+}
+
+#[derive(Debug)]
 pub enum NewError {
     Fmmap(fmmap::error::Error),
     Io(std::io::Error),
@@ -70,7 +82,7 @@ impl<Entry: Codable> Value<Entry> {
         })
     }
 
-    fn entry_lens_offset<T>(&self, id: entry::Id<Entry>, lens: Lens<Entry, T>) -> usize {
+    fn entry_lens_offset<T>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> usize {
         self.entry_offset(id) + lens.offset()
     }
 
@@ -78,13 +90,26 @@ impl<Entry: Codable> Value<Entry> {
         8 + self.entry_size * id.as_usize()
     }
 
-    pub fn buf_ref<T: Codable>(&self, id: entry::Id<Entry>, lens: Lens<Entry, T>) -> Result<codable::BufRef<'_, T>, fmmap::error::Error> {
-        Ok(codable::BufRef::new(self.file_map.bytes(self.entry_lens_offset(id, lens), T::size())?))
+    pub fn last_entry_id(&self) -> Option<entry::Id<Entry>> {
+        match self.next_entry_id.as_u64() {
+            0 => None,
+            _ => Some(self.next_entry_id - 1)
+        }
     }
 
-    pub fn buf_mut<T: Codable>(&mut self, id: entry::Id<Entry>, lens: Lens<Entry, T>) -> Result<codable::BufMut<'_, T>, fmmap::error::Error> {
-        Ok(codable::BufMut::new(self.file_map.bytes_mut(self.entry_lens_offset(id, lens), T::size())?))
+    // region: Core functions.
+    pub fn buf_ref<T: Codable>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<codable::BufRef<'_, T>, fmmap::error::Error> {
+        Ok(codable::BufRef::new(self.file_map.bytes(self.entry_lens_offset(lens, id), T::size())?))
     }
+
+    pub fn buf_mut<T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<codable::BufMut<'_, T>, fmmap::error::Error> {
+        Ok(codable::BufMut::new(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::size())?))
+    }
+
+    // pub fn buf_mut_ptr<T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<codable::BufMutPtr<T>, fmmap::error::Error> {
+    //     Ok(codable::BufMutPtr::new(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::size())? as *mut _))
+    // }
+    // endregion: Core functions.
 
     pub fn add(&mut self, entry: &impl codable::Write<Entry>) -> Result<entry::Id<Entry>, AddError> {
         type E = AddError;
@@ -96,19 +121,33 @@ impl<Entry: Codable> Value<Entry> {
             self.margin = self.max_margin + 1;
         }
         self.margin -= 1;
-        self.set(id, Lens::to_self(), entry).map_err(E::Fmmap)?;
+        self.set(Lens::to_self(), id, entry).map_err(E::Fmmap)?;
         self.next_entry_id = self.next_entry_id.succ();
         self.file_map.write_u64(self.next_entry_id.as_u64(), 0).map_err(E::Fmmap)?;
         Ok(id)
     }
 
-    // Convenience functions.
-    pub fn get<T: Codable>(&self, id: entry::Id<Entry>, lens: Lens<Entry, T>) -> Result<T, GetError<T>> {
-        self.buf_ref(id, lens).map_err(GetError::Fmmap)?.decode().map_err(GetError::Decode)
+    pub fn remove_last(&mut self) -> Result<(), RemoveLastError> {
+        type E = RemoveLastError;
+        let id = self.next_entry_id.prev();
+        if self.margin >= self.max_margin {
+            let new_size = self.entry_offset(id) as u64;
+            self.file.set_len(new_size).map_err(E::Io)?;
+            self.file_map.truncate(new_size).map_err(E::Fmmap)?;
+            self.margin = 0;
+        }
+        self.margin += 1;
+        self.file_map.write_u64(self.next_entry_id.as_u64(), 0).map_err(E::Fmmap)?;
+        Ok(())
     }
 
-    pub fn set<'a, T: Codable>(&'a mut self, id: entry::Id<Entry>, lens: Lens<Entry, T>, value: &impl codable::Write<T>) -> Result<(), fmmap::error::Error> {
-        let mut buf_mut = self.buf_mut(id, lens)?;
+    // Convenience functions.
+    pub fn get<T: Codable>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<T, GetError<T>> {
+        self.buf_ref(lens, id).map_err(GetError::Fmmap)?.decode().map_err(GetError::Decode)
+    }
+
+    pub fn set<'a, T: Codable>(&'a mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>, value: &impl codable::Write<T>) -> Result<(), fmmap::error::Error> {
+        let mut buf_mut = self.buf_mut(lens, id)?;
         buf_mut.set(value);
         Ok(())
     }
@@ -124,7 +163,7 @@ impl<Entry: Codable> Value<Entry> {
         f: impl Fn(&T) -> bool,
     ) -> Result<Option<(entry::Id<Entry>, T)>, GetError<T>> {
         for id in self.all_ids() {
-            let data = self.get(id, lens)?;
+            let data = self.get(lens, id)?;
             if f(&data) {
                 return Ok(Some((id, data)))
             }
@@ -141,11 +180,39 @@ impl<Entry: Codable> Value<Entry> {
         let buf = other.as_buf();
         let buf = buf.to_ref();
         for id in self.all_ids() {
-            let data = self.buf_ref(id, lens)?;
+            let data = self.buf_ref(lens, id)?;
             if buf == data {
                 return Ok(Some(id))
             }
         }
         Ok(None)
+    }
+
+    pub fn copy<T: Codable>(&mut self, lens: Lens<Entry, T>, src_id: entry::Id<Entry>, dst_id: entry::Id<Entry>) -> Result<(), fmmap::error::Error> {
+        let mut dst = unsafe { self.buf_mut(lens, dst_id)?.detach() };
+        let src = self.buf_ref(lens, src_id)?;
+        dst.set(&src);
+        Ok(())
+    }
+
+    pub fn swap<T: Codable>(&mut self, lens: Lens<Entry, T>, a_id: entry::Id<Entry>, b_id: entry::Id<Entry>) -> Result<(), fmmap::error::Error> {
+        if a_id != b_id {
+            let mut a = unsafe { self.buf_mut(lens, a_id)?.detach() };
+            let mut b = self.buf_mut(lens, b_id)?;
+            a.swap(&mut b);
+        }
+        Ok(())
+    }
+
+    /// Swaps given entry with the last entry and removes it.
+    /// WARNING: This method changes ID of the last entry in this collection. 
+    /// You probably should only use this if this collection is used as a stack/set and not as a map.
+    pub fn swap_remove(&mut self, id: entry::Id<Entry>) -> Result<(), SwapRemoveError> {
+        type E = SwapRemoveError;
+        if let Some(last_entry_id) = self.last_entry_id() {
+            self.swap(Lens::to_self(), id, last_entry_id).map_err(E::Fmmap)?;
+        }
+        self.remove_last().map_err(E::RemoveLastError)?;
+        Ok(())
     }
 }

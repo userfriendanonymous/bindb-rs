@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ptr};
 use crate::Lens;
 
 pub mod basic;
@@ -82,11 +82,51 @@ impl<'b, T> Buf<T> for BufMut<'b, T> {
     }
 }
 
-impl<'a, T: Instance> BufMut<'a, T> {
+impl<'a, T> BufMut<'a, T> {
     pub(crate) fn new(data: &'a mut [u8]) -> Self {
         Self(data, Default::default())
     }
-    
+
+    /// Changes lifetime.
+    pub unsafe fn detach<'b>(&'a mut self) -> BufMut<'b, T> {
+        BufMut::new(&mut *(self.0 as *mut _))
+    }
+
+    pub fn to_mut_ptr(&mut self) -> BufMutPtr<T> {
+        BufMutPtr::new(self.0 as *mut _)
+    }
+
+    pub fn to_owned(&self) -> BufOwned<T> {
+        BufOwned(self.0.to_vec(), self.1)
+    }
+
+    pub fn swap(&mut self, other: &mut Self) {
+        self.0.swap_with_slice(other.0);
+    }
+
+    // Parts must not overlap.
+    pub fn swap_within<I: Instance>(&mut self, a: Lens<T, I>, b: Lens<T, I>) {
+        let size = I::size();
+        if a.offset().abs_diff(b.offset()) < size {
+            panic!("Overlapping lens!");
+        }
+        unsafe {
+            ptr::swap_nonoverlapping(
+                (&mut self.0[a.offset() .. a.offset() + size]).as_mut_ptr(),
+                (&mut self.0[b.offset() .. b.offset() + size]).as_mut_ptr(),
+                I::size()
+            );
+        }
+    }
+
+    pub fn set(&mut self, to: &impl Write<T>) {
+        to.write(self.0);
+    }
+
+    pub fn copy_within<I: Instance>(&mut self, from: Lens<T, I>, to: Lens<T, I>) {
+        self.0.copy_within(from.offset() .. from.offset() + I::size(), to.offset());
+    }
+
     pub fn to<I: Instance>(&'a mut self, lens: Lens<T, I>) -> BufMut<'a, I> {
         BufMut(&mut self.0[lens.offset() .. lens.offset() + I::size()], Default::default())
     }
@@ -94,17 +134,11 @@ impl<'a, T: Instance> BufMut<'a, T> {
     pub fn ref_to<I: Instance>(&'a self, lens: Lens<T, I>) -> BufRef<'a, I> {
         BufRef(&self.0[lens.offset() .. lens.offset() + I::size()], Default::default())
     }
+}
 
+impl<'a, T: Instance> BufMut<'a, T> {
     pub fn decode(&self) -> Result<T, <T as Instance>::DecodeError> {
         T::decode(self.0)
-    }
-
-    pub fn set(&mut self, to: &impl Write<T>) {
-        to.write(self.0);
-    }
-
-    pub fn set_within<I: Instance>(&mut self, from: Lens<T, I>, to: Lens<T, I>) {
-        self.0.copy_within(from.offset() .. from.offset() + I::size(), to.offset());
     }
 
     /// Returns modified data.
@@ -113,9 +147,56 @@ impl<'a, T: Instance> BufMut<'a, T> {
         self.set(&modified);
         Ok(modified)
     }
+}
 
-    pub fn to_owned(&self) -> BufOwned<T> {
-        BufOwned(self.0.to_vec(), self.1)
+pub struct BufMutPtr<T>(*mut [u8], PhantomData<T>);
+
+impl<T> BufMutPtr<T> {
+    pub(crate) fn new(data: *mut [u8]) -> Self {
+        Self(data, Default::default())
+    }
+
+    pub unsafe fn set(&mut self, to: &impl Write<T>) {
+        to.write(&mut *self.0);
+    }
+
+    pub unsafe fn set_within<I: Instance>(&mut self, from: Lens<T, I>, to: Lens<T, I>) {
+        (&mut *self.0).copy_within(from.offset() .. from.offset() + I::size(), to.offset());
+    }
+
+    /// Must not overlap.
+    pub unsafe fn swap(&mut self, other: &mut BufMutPtr<T>) {
+        (&mut *self.0).swap_with_slice(&mut *other.0);
+    }
+
+    pub unsafe fn to<I: Instance>(&mut self, lens: Lens<T, I>) -> BufMutPtr<I> {
+        BufMutPtr((&mut (&mut *self.0)[lens.offset() .. lens.offset() + I::size()]) as *mut _, Default::default())
+    }
+
+    pub unsafe fn to_owned(&self) -> BufOwned<T> {
+        BufOwned((&*self.0).to_vec(), self.1)
+    }
+
+    // Removed.
+    // pub unsafe fn to_ref<'a>(&self) -> BufRef<'a, T> {
+    //     BufRef::new(&*self.0)
+    // }
+
+    // pub unsafe fn to_mut<'a>(&self) -> BufMut<'a, T> {
+    //     BufMut::new(&mut *self.0)
+    // }
+}
+
+impl<T: Instance> BufMutPtr<T> {
+    pub unsafe fn decode(&self) -> Result<T, <T as Instance>::DecodeError> {
+        T::decode(&*self.0)
+    }
+
+    /// Returns modified data.
+    pub unsafe fn modify(&mut self, f: impl Fn(T) -> T) -> Result<T, <T as Instance>::DecodeError> {
+        let modified = f(self.decode()?);
+        self.set(&modified);
+        Ok(modified)
     }
 }
 
@@ -150,25 +231,25 @@ impl<T: Instance> BufOwned<T> {
         Self(bytes, Default::default())
     }
 
-    pub fn mut_to<'a, I: Instance>(&'a mut self, lens: Lens<T, I>) -> BufMut<'a, I> {
-        BufMut(&mut self.0[lens.offset() .. lens.offset() + I::size()], Default::default())
-    }
-
-    pub fn ref_to<'a, I: Instance>(&'a mut self, lens: Lens<T, I>) -> BufRef<'a, I> {
-        BufRef(&self.0[lens.offset() .. lens.offset() + I::size()], Default::default())
-    }
-
     pub fn decode(&self) -> Result<T, <T as Instance>::DecodeError> {
         T::decode(&self.0)
     }
 
-    pub fn set(&mut self, to: &impl Write<T>) {
-        to.write(&mut self.0);
-    }
+    // pub fn mut_to<'a, I: Instance>(&'a mut self, lens: Lens<T, I>) -> BufMut<'a, I> {
+    //     BufMut(&mut self.0[lens.offset() .. lens.offset() + I::size()], Default::default())
+    // }
 
-    pub fn set_within<I: Instance>(&mut self, from: Lens<T, I>, to: Lens<T, I>) {
-        self.0.copy_within(from.offset() .. from.offset() + I::size(), to.offset());
-    }
+    // pub fn ref_to<'a, I: Instance>(&'a mut self, lens: Lens<T, I>) -> BufRef<'a, I> {
+    //     BufRef(&self.0[lens.offset() .. lens.offset() + I::size()], Default::default())
+    // }
+
+    // pub fn set(&mut self, to: &impl Write<T>) {
+    //     to.write(&mut self.0);
+    // }
+
+    // pub fn set_within<I: Instance>(&mut self, from: Lens<T, I>, to: Lens<T, I>) {
+    //     self.0.copy_within(from.offset() .. from.offset() + I::size(), to.offset());
+    // }
 
     // pub fn to_owned(&self) -> Buf<T> {
     //     Buf(self.0.to_vec(), self.1)

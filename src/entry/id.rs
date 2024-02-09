@@ -79,6 +79,12 @@ impl<T> Value<T> {
         self.0 += 1;
         value
     }
+
+    pub fn prev(&mut self) -> Self {
+        let value = self.clone();
+        self.0 -= 1;
+        value
+    }
 }
 
 impl<T> Add<u64> for Value<T> {

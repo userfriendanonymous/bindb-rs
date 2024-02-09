@@ -21,53 +21,78 @@ fn benchmark<R>(msg: &'static str, f: impl FnOnce() -> R) -> R {
 }
 
 fn main() {
-    let mut db = benchmark("Open", || Collection::new("./local/test_db").unwrap());
+    // let mut file = File::create("./local/len_test").unwrap();
+    // let len = 1321528398;
+    // file.set_len(8 + Item::size() as u64 * len).unwrap();
+    // let mut file_map = MmapFileMut::open("./local/len_test").unwrap();
+    // file_map.write_u64(len, 0).unwrap();
+    let mut db = benchmark("Open", || Collection::<Item>::open("./local/len_test").unwrap());
 
-    let total = 1000000;
+    let total = 1321528398;
+
+    benchmark("Some ops", || {
+        db.set(Lens::to_self(), entry::Id::from_u64(0), &Item {
+            bar: 1,
+            foo: Some(1.11)
+        }).unwrap();
+
+        db.set(Lens::to_self(), entry::Id::from_u64(total - 2), &Item {
+            bar: 999,
+            foo: Some(999.999)
+        }).unwrap();
+
+        db.copy(Lens::to_self(), entry::Id::from_u64(total - 2), entry::Id::from_u64(1)).unwrap();
+
+        let buf1 = db.buf_ref(Lens::to_self(), entry::Id::from_u64(0)).unwrap();
+        let buf2 = db.buf_ref(Lens::to_self(), entry::Id::from_u64(total - 2)).unwrap();
+        println!("#0: {:?}", buf1.decode());
+        println!("#(total - 2): {:?}", buf2.decode());
+        println!("#1: {:?}", db.get(Lens::to_self(), entry::Id::from_u64(1)));
+    });
 
     // db.add(&Item {
     //     foo: None,
     //     bar: 20,
     // }).unwrap();
 
-    benchmark("insert", || {
-        for i in 0 .. total {
-            let id = db.add(&Item {
-                foo: Some(i as f32 + 0.53),
-                bar: i
-            }).unwrap();
-        }
-    });
+    // benchmark("insert", || {
+    //     for i in 0 .. total {
+    //         let id = db.add(&Item {
+    //             foo: Some(i as f32 + 0.53),
+    //             bar: i
+    //         }).unwrap();
+    //     }
+    // });
     // db.set(Id(5), Item::foo(), &None).unwrap();
 
-    benchmark("read", || {
-        for i in 0 .. total {
-            db.get(entry::Id::from(i), Lens::to_self()).unwrap();
-        }
-    });
+    // benchmark("read", || {
+    //     for i in 0 .. total {
+    //         db.get(Lens::to_self(), entry::Id::from(i)).unwrap();
+    //     }
+    // });
 
-    let item = benchmark("find_exact", || {
-        db.find_exact(Item::bar(), &(total - 10)).unwrap()
-    });
+    // let item = benchmark("find_exact", || {
+    //     db.find_exact(Item::bar(), &(total - 10)).unwrap()
+    // });
 
-    let item = benchmark("find", || {
-        db.find(Item::bar(), |&x| x >= total - 10).unwrap()
-    });
+    // let item = benchmark("find", || {
+    //     db.find(Item::bar(), |&x| x >= total - 10).unwrap()
+    // });
 
-    let item = benchmark("find_full", || {
-        db.find(Lens::to_self(), |x| x.bar >= total - 10).unwrap()
-    });
+    // let item = benchmark("find_full", || {
+    //     db.find(Lens::to_self(), |x| x.bar >= total - 10).unwrap()
+    // });
 
-    benchmark("set", || {
-        for i in 0 .. total {
-            db.set(entry::Id::from(i), Lens::to_self(), &Item {
-                foo: None,
-                bar: 13490345
-            }).unwrap();
-        }
-    });
+    // benchmark("set", || {
+    //     for i in 0 .. total {
+    //         db.set(Lens::to_self(), entry::Id::from(i), &Item {
+    //             foo: None,
+    //             bar: 13490345
+    //         }).unwrap();
+    //     }
+    // });
 
-    let bar = db.get(entry::Id::from(0), Lens::to_self()).unwrap();
+    let bar = db.get(Lens::to_self(), entry::Id::from(0)).unwrap();
     println!("{bar:?}");
     
 }
@@ -109,283 +134,3 @@ impl Codable for Item {
         })
     }
 }
-
-
-
-
-
-
-// pub trait Codable {
-//     type DecodeError;
-
-//     fn encode(&self, bytes: &mut [u8]);
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized;
-
-//     fn size() -> u64;
-// }
-
-
-
-// #[derive(Clone, Copy)]
-// struct Lens<B, T> {
-//     _marker: PhantomData<(B, T)>,
-//     offset: u64,
-// }
-
-// impl<B> Lens<B, B> {
-//     pub fn to_self() -> Self {
-//         Self {
-//             _marker: Default::default(),
-//             offset: 0
-//         }
-//     }
-// }
-
-// impl<B, T> Lens<B, T> {
-//     pub fn chain<OT>(self, other: Lens<T, OT>) -> Lens<B, OT> {
-//         Lens {
-//             _marker: Default::default(),
-//             offset: self.offset + other.offset
-//         }
-//     }
-
-//     pub fn new(offset: u64) -> Self {
-//         Self {
-//             _marker: Default::default(),
-//             offset
-//         }
-//     }
-// }
-
-
-// #[derive(Debug)]
-// pub enum GetError<DecodeError> {
-//     Fmmap(fmmap::error::Error),
-//     Decode(DecodeError)
-// }
-
-// struct Database<Entry> {
-//     file: File,
-//     next_entry_id: Id,
-//     file_map: MmapFileMut,
-//     entry_size: u64,
-//     margin: u64,
-//     max_margin: u64,
-//     _marker: PhantomData<Entry>
-// }
-
-// impl<Entry: Codable> Database<Entry> {
-//     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, fmmap::error::Error> {
-//         let mut file = File::create(&path).unwrap();
-//         file.set_len(8).unwrap();
-//         let mut file_map = fmmap::MmapFileMut::open(path)?;
-        
-//         let next_entry_id = Id::zero();
-//         file_map.write_u64(next_entry_id.0, 0)?;
-//         Ok(Self {
-//             margin: 0,
-//             max_margin: 1000,
-//             file,
-//             file_map,
-//             next_entry_id,
-//             entry_size: Entry::size(),
-//             _marker: Default::default()
-//         })
-//     }
-
-//     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, fmmap::error::Error> {
-//         let file = File::create(&path).unwrap();
-//         let file_map = fmmap::MmapFileMut::open(path)?;
-//         let next_entry_id = Id(file_map.read_u64(0)?);
-//         Ok(Self {
-//             margin: 0,
-//             max_margin: 1000,
-//             file,
-//             file_map,
-//             next_entry_id,
-//             entry_size: Entry::size(),
-//             _marker: Default::default()
-//         })
-//     }
-
-//     fn entry_lens_offset<T>(&self, id: Id, lens: Lens<Entry, T>) -> u64 {
-//         8 + self.entry_size * id.0 + lens.offset
-//     }
-
-//     fn entry_offset(&self, id: Id) -> u64 {
-//         8 + self.entry_size * id.0
-//     }
-
-//     pub fn get<T: Codable>(&self, id: Id, lens: Lens<Entry, T>) -> Result<T, GetError<T::DecodeError>> {
-//         let bytes = self.file_map.bytes(self.entry_lens_offset(id, lens) as usize, T::size() as usize).map_err(GetError::Fmmap)?;
-//         T::decode(bytes).map_err(GetError::Decode)
-//     }
-
-//     pub fn set<T: Codable>(&mut self, id: Id, lens: Lens<Entry, T>, value: &T) -> Result<(), fmmap::error::Error> {
-//         let bytes = self.file_map.bytes_mut(self.entry_lens_offset(id, lens) as usize, T::size() as usize)?;
-//         value.encode(bytes);
-//         Ok(())
-//     }
-
-//     pub fn add(&mut self, entry: &Entry) -> Result<Id, fmmap::error::Error> {
-//         let id = self.next_entry_id;
-//         if self.margin == 0 {
-//             let new_size = self.entry_offset(Id(id.0 + self.max_margin + 2));
-//             self.file.set_len(new_size).unwrap();
-//             self.file_map.truncate(new_size)?;
-//             self.margin = self.max_margin + 1;
-//         }
-//         self.margin -= 1;
-//         self.set(id, Lens::to_self(), entry)?;
-//         self.next_entry_id = self.next_entry_id.succ();
-//         self.file_map.write_u64(self.next_entry_id.0, 0)?;
-//         Ok(id)
-//     }
-// }
-
-// #[derive(Clone, Copy, Debug)]
-// struct Id(u64);
-
-// impl Id {
-//     pub fn zero() -> Self {
-//         Self(0)
-//     }
-
-//     pub fn succ(&self) -> Self {
-//         Self(self.0 + 1)
-//     }
-
-//     pub fn next(&mut self) -> Self {
-//         let value = self.clone();
-//         self.0 += 1;
-//         value
-//     }
-// }
-
-// impl Codable for u32 {
-//     type DecodeError = ();
-
-//     fn size() -> u64 {
-//         4
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         bytes.copy_from_slice(&self.to_le_bytes());
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
-//     }
-// }
-
-// impl Codable for u64 {
-//     type DecodeError = ();
-
-//     fn size() -> u64 {
-//         8
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         bytes.copy_from_slice(&self.to_le_bytes());
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         Ok(u64::from_le_bytes(bytes.try_into().unwrap()))
-//     }
-// }
-
-// impl Codable for i32 {
-//     type DecodeError = ();
-
-//     fn size() -> u64 {
-//         4
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         bytes.copy_from_slice(&self.to_le_bytes())
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
-//     }
-// }
-
-// impl Codable for i64 {
-//     type DecodeError = ();
-
-//     fn size() -> u64 {
-//         8
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         bytes.copy_from_slice(&self.to_le_bytes());
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         Ok(i64::from_le_bytes(bytes.try_into().unwrap()))
-//     }
-// }
-
-// impl Codable for f32 {
-//     type DecodeError = ();
-
-//     fn size() -> u64 {
-//         4
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         bytes.copy_from_slice(&self.to_le_bytes());
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         Ok(f32::from_le_bytes(bytes.try_into().unwrap()))
-//     }
-// }
-
-// impl Codable for f64 {
-//     type DecodeError = ();
-
-//     fn size() -> u64 {
-//         8
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         bytes.copy_from_slice(&self.to_le_bytes());
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         Ok(f64::from_le_bytes(bytes.try_into().unwrap()))
-//     }
-// }
-
-// #[derive(Clone, Debug)]
-// pub enum OptionDecodeError<ChildDecodeError> {
-//     InvalidOption,
-//     Child(ChildDecodeError),
-// }
-
-// impl<T: Codable> Codable for Option<T> {
-//     type DecodeError = OptionDecodeError<T::DecodeError>;
-
-//     fn size() -> u64 {
-//         T::size() + 1
-//     }
-
-//     fn encode(&self, bytes: &mut [u8]) {
-//         match self {
-//             Some(v) => {
-//                 bytes[0] = 1;
-//                 v.encode(&mut bytes[1..]);
-//             }
-//             None => bytes[0] = 0
-//         };
-//     }
-
-//     fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError> where Self: Sized {
-//         match bytes[0] {
-//             0 => Ok(None),
-//             1 => T::decode(&bytes[1..]).map_err(OptionDecodeError::Child).map(Some),
-//             _ => Err(OptionDecodeError::InvalidOption)
-//         }
-//     }
-// }
