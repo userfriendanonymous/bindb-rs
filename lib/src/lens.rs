@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use super::{Codable, Lensable};
 
 pub struct Value<B, T> {
     _marker: PhantomData<(B, T)>,
@@ -32,7 +33,6 @@ impl<B, T> Value<B, T> {
         }
     }
 
-
     pub fn chain<OT>(self, other: Value<T, OT>) -> Value<B, OT> {
         Value {
             _marker: Default::default(),
@@ -40,11 +40,33 @@ impl<B, T> Value<B, T> {
         }
     }
 
-    pub fn unsafe_new(offset: usize) -> Self {
-        Self::new(offset)
-    }
+    // pub fn unsafe_new(offset: usize) -> Self {
+    //     Self::new(offset)
+    // }
 
     pub fn offset(&self) -> usize {
         self.offset
+    }
+}
+
+impl<B: Codable, T: Codable> Value<B, T> {
+    pub fn create<L>(lens: &L) -> Self where B: Lensable<L, To = T> {
+        Self::new(<B as Lensable>::offset(lens))
+    }
+}
+
+pub trait ToValue<B, T> {
+    fn to_lens(self) -> Value<B, T>;
+}
+
+impl<B, T> ToValue<B, T> for Value<B, T> {
+    fn to_lens(self) -> Value<B, T> {
+        self
+    }
+}
+
+impl<L, B: Codable + Lensable<L, To = T>, T: Codable> ToValue<B, T> for &L {
+    fn to_lens(self) -> Value<B, T> {
+        Self::new(B::offset(self))
     }
 }

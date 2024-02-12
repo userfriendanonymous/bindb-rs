@@ -1,12 +1,11 @@
 use std::{fs::File, path::Path};
 use fmmap::{MmapFileExt as _, MmapFileMut, MmapFileMutExt as _};
-use crate::codable::{self, Buf as _};
-use super::{entry, Codable, Lens};
+use crate::{codable, utils::{slice_to_array, slice_to_array_mut}};
+use super::{entry, buf, Codable, Lens, AsBuf};
 
 #[derive(Debug)]
-pub enum GetError<T: Codable> {
+pub enum GetError {
     Fmmap(fmmap::error::Error),
-    Decode(T::DecodeError)
 }
 
 #[derive(Debug)]
@@ -43,12 +42,11 @@ pub struct Value<Entry> {
     file: File,
     next_entry_id: entry::Id<Entry>,
     file_map: MmapFileMut,
-    entry_size: usize,
     margin: u64,
     max_margin: u64,
 }
 
-impl<Entry: Codable> Value<Entry> {
+impl<Entry: Codable> Value<Entry> where [(); Entry::SIZE]: {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, NewError> {
         type E = NewError;
         let file = File::create(&path).map_err(E::Io)?;
@@ -63,7 +61,6 @@ impl<Entry: Codable> Value<Entry> {
             file,
             file_map,
             next_entry_id,
-            entry_size: Entry::size(),
         })
     }
 
@@ -78,7 +75,6 @@ impl<Entry: Codable> Value<Entry> {
             file,
             file_map,
             next_entry_id,
-            entry_size: Entry::size(),
         })
     }
 
@@ -87,7 +83,7 @@ impl<Entry: Codable> Value<Entry> {
     }
 
     fn entry_offset(&self, id: entry::Id<Entry>) -> usize {
-        8 + self.entry_size * id.as_usize()
+        8 + Entry::SIZE * id.as_usize()
     }
 
     pub fn last_entry_id(&self) -> Option<entry::Id<Entry>> {
@@ -98,20 +94,24 @@ impl<Entry: Codable> Value<Entry> {
     }
 
     // region: Core functions.
-    pub fn buf_ref<T: Codable>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<codable::BufRef<'_, T>, fmmap::error::Error> {
-        Ok(codable::BufRef::new(self.file_map.bytes(self.entry_lens_offset(lens, id), T::size())?))
+    pub fn buf_ref<'a, T: Codable>(&'a self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::Ref<'a, T>, fmmap::error::Error>
+    where [(); T::SIZE]: {
+        let bytes = unsafe { slice_to_array(self.file_map.bytes(self.entry_lens_offset(lens, id), T::SIZE)?) };
+        Ok(buf::Ref::new(bytes))
     }
 
-    pub fn buf_mut<T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<codable::BufMut<'_, T>, fmmap::error::Error> {
-        Ok(codable::BufMut::new(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::size())?))
+    pub fn buf_mut<'a, T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::Mut<'a, T>, fmmap::error::Error>
+    where [(); T::SIZE]: {
+        let bytes = unsafe { slice_to_array_mut(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::SIZE)?) };
+        Ok(buf::Mut::new(bytes))
     }
 
-    // pub fn buf_mut_ptr<T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<codable::BufMutPtr<T>, fmmap::error::Error> {
-    //     Ok(codable::BufMutPtr::new(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::size())? as *mut _))
+    // pub fn buf_mut_ptr<T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::MutPtr<T>, fmmap::error::Error> {
+    //     Ok(buf::MutPtr::new(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::size())? as *mut _))
     // }
     // endregion: Core functions.
 
-    pub fn add(&mut self, entry: &impl codable::Write<Entry>) -> Result<entry::Id<Entry>, AddError> {
+    pub fn add(&mut self, entry: &impl buf::Write<Entry>) -> Result<entry::Id<Entry>, AddError> {
         type E = AddError;
         let id = self.next_entry_id;
         if self.margin == 0 {
@@ -141,19 +141,20 @@ impl<Entry: Codable> Value<Entry> {
         Ok(())
     }
 
-    // Convenience functions.
-    pub fn get<T: Codable>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<T, GetError<T>> {
-        self.buf_ref(lens, id).map_err(GetError::Fmmap)?.decode().map_err(GetError::Decode)
+    pub fn all_ids(&self) -> impl Iterator<Item = entry::Id<Entry>> {
+        entry::id::Range(entry::Id::zero(), self.next_entry_id)
     }
 
-    pub fn set<'a, T: Codable>(&'a mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>, value: &impl codable::Write<T>) -> Result<(), fmmap::error::Error> {
+    // Convenience functions.
+    pub fn get<T: Codable>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<T, GetError> where [(); T::SIZE]: {
+        Ok(self.buf_ref(lens, id).map_err(GetError::Fmmap)?.decode())
+    }
+
+    pub fn set<'a, T: Codable>(&'a mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>, value: &impl buf::Write<T>) -> Result<(), fmmap::error::Error>
+    where [(); T::SIZE]: {
         let mut buf_mut = self.buf_mut(lens, id)?;
         buf_mut.set(value);
         Ok(())
-    }
-
-    pub fn all_ids(&self) -> impl Iterator<Item = entry::Id<Entry>> {
-        entry::id::Range(entry::Id::zero(), self.next_entry_id)
     }
 
     pub fn find<T: Codable>(
@@ -161,7 +162,8 @@ impl<Entry: Codable> Value<Entry> {
         lens: Lens<Entry, T>,
         // ids: impl Iterator<Item = entry::Id<Entry>>,
         f: impl Fn(&T) -> bool,
-    ) -> Result<Option<(entry::Id<Entry>, T)>, GetError<T>> {
+    ) -> Result<Option<(entry::Id<Entry>, T)>, GetError> 
+    where [(); T::SIZE]: {
         for id in self.all_ids() {
             let data = self.get(lens, id)?;
             if f(&data) {
@@ -175,8 +177,9 @@ impl<Entry: Codable> Value<Entry> {
         &self,
         lens: Lens<Entry, T>,
         // ids: impl Iterator<Item = entry::Id<Entry>>,
-        other: &'a impl codable::AsBuf<'a, T>,
-    ) -> Result<Option<entry::Id<Entry>>, fmmap::error::Error> {
+        other: &'a impl AsBuf<'a, T>,
+    ) -> Result<Option<entry::Id<Entry>>, fmmap::error::Error>
+    where [(); T::SIZE]: {
         let buf = other.as_buf();
         let buf = buf.to_ref();
         for id in self.all_ids() {
@@ -188,14 +191,16 @@ impl<Entry: Codable> Value<Entry> {
         Ok(None)
     }
 
-    pub fn copy<T: Codable>(&mut self, lens: Lens<Entry, T>, src_id: entry::Id<Entry>, dst_id: entry::Id<Entry>) -> Result<(), fmmap::error::Error> {
+    pub fn copy<T: Codable>(&mut self, lens: Lens<Entry, T>, src_id: entry::Id<Entry>, dst_id: entry::Id<Entry>) -> Result<(), fmmap::error::Error>
+    where [(); T::SIZE]: {
         let mut dst = unsafe { self.buf_mut(lens, dst_id)?.detach() };
         let src = self.buf_ref(lens, src_id)?;
         dst.set(&src);
         Ok(())
     }
 
-    pub fn swap<T: Codable>(&mut self, lens: Lens<Entry, T>, a_id: entry::Id<Entry>, b_id: entry::Id<Entry>) -> Result<(), fmmap::error::Error> {
+    pub fn swap<T: Codable>(&mut self, lens: Lens<Entry, T>, a_id: entry::Id<Entry>, b_id: entry::Id<Entry>) -> Result<(), fmmap::error::Error>
+    where [(); T::SIZE]: {
         if a_id != b_id {
             let mut a = unsafe { self.buf_mut(lens, a_id)?.detach() };
             let mut b = self.buf_mut(lens, b_id)?;
