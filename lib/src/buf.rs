@@ -1,5 +1,5 @@
-use std::{marker::PhantomData, ptr};
-use crate::{utils::{slice_to_array, slice_to_array_mut}, Lens};
+use std::ptr;
+use crate::Lens;
 use super::Codable;
 
 pub mod bytes;
@@ -10,7 +10,7 @@ mod private {
 
 impl<T: Codable> private::Write for T {}
 
-pub struct Ref<'a, T: Codable>(bytes::Ref<'a, T>, PhantomData<T>);
+pub struct Ref<'a, T: Codable>(bytes::Ref<'a, T>);
 
 impl<'a, T: Codable> PartialEq for Ref<'a, T> {
     fn eq(&self, other: &Self) -> bool {
@@ -35,8 +35,8 @@ impl<'b, T: Codable> Instance<T> for Ref<'b, T> {
 }
 
 impl<'a, T: Codable> Ref<'a, T> {
-    pub(crate) const fn new(data: &'a [u8]) -> Self {
-        Self(data, PhantomData)
+    pub(crate) const fn new(data: bytes::Ref<'a, T>) -> Self {
+        Self(data)
     }
 }
 
@@ -46,15 +46,16 @@ impl<'a, T: Codable> Ref<'a, T> {
     }
 
     pub fn to<I: Codable>(&'a mut self, lens: Lens<T, I>) -> Ref<'a, I> {
-        Ref::new(unsafe { slice_to_array(&self.0[lens.offset() .. lens.offset() + I::SIZE]) })
+        Ref::new(self.0.index_to(lens.offset()))
+        // Ref::new(unsafe { slice_to_array(&self.0[lens.offset() .. lens.offset() + I::SIZE]) })
     }
 
     pub fn to_owned(&self) -> Owned<T> where [(); T::SIZE]: {
-        Owned::new(self.0.clone())
+        Owned::new(self.0.into_owned())
     }
 }
 
-pub struct Mut<'a, T: Codable>(bytes::Mut<'a, T>, PhantomData<T>);
+pub struct Mut<'a, T: Codable>(bytes::Mut<'a, T>);
 
 impl<'a, T: Codable> private::Write for Mut<'a, T> {}
 
@@ -68,13 +69,13 @@ impl<'a, T: Codable> Eq for Mut<'a, T> {}
 
 impl<'b, T: Codable> Instance<T> for Mut<'b, T> {
     fn to_ref<'a>(&'a self) -> Ref<'a, T> {
-        Ref(&self.0, self.1)
+        Ref(self.0.to_ref())
     }
 }
 
 impl<'a, T: Codable> Mut<'a, T> {
-    pub(crate) const fn new(data: &'a mut [u8]) -> Self {
-        Self(data, PhantomData)
+    pub(crate) const fn new(data: bytes::Mut<'a, T>) -> Self {
+        Self(data)
     }
 
     /// Changes lifetime.
@@ -87,11 +88,11 @@ impl<'a, T: Codable> Mut<'a, T> {
     // }
 
     pub fn to_owned(&self) -> Owned<T> where [(); T::SIZE]: {
-        Owned::new(self.0.clone())
+        Owned::new(self.0.into_owned())
     }
 
     pub fn swap(&mut self, other: &mut Self) {
-        self.0.swap_with_slice(other.0);
+        self.0.swap(&mut other.0);
     }
 
     // Parts must not overlap.
@@ -117,15 +118,15 @@ impl<'a, T: Codable> Mut<'a, T> {
     }
 
     pub fn to<I: Codable>(&'a mut self, lens: Lens<T, I>) -> Mut<'a, I> where [(); I::SIZE]: {
-        Mut::new(unsafe { slice_to_array_mut(&mut self.0[lens.offset() .. lens.offset() + I::SIZE]) })
+        Mut::new(self.0.index_to(lens.offset()))
     }
 
     pub fn ref_to<I: Codable>(&'a self, lens: Lens<T, I>) -> Ref<'a, I> where [(); I::SIZE]: {
-        Ref::new(unsafe { slice_to_array(&self.0[lens.offset() .. lens.offset() + I::SIZE]) })
+        Ref::new(self.0.index_to(lens.offset()).to_ref())
     }
 
     pub fn decode(&self) -> T {
-        T::decode(self.0)
+        T::decode(&self.0.to_ref())
     }
 
     /// Returns modified data.
@@ -187,7 +188,7 @@ impl<'a, T: Codable> Mut<'a, T> {
 //     }
 // }
 
-pub struct Owned<T: Codable>([u8; T::SIZE], PhantomData<T>) where [(); T::SIZE]:;
+pub struct Owned<T: Codable>(bytes::Owned<T>) where [(); T::SIZE]:;
 
 impl<T: Codable> private::Write for Owned<T> where [(); T::SIZE]: {}
 
@@ -201,29 +202,29 @@ impl<T: Codable> Eq for Owned<T> where [(); T::SIZE]: {}
 
 impl<T: Codable> Instance<T> for Owned<T> where [(); T::SIZE]: {
     fn to_ref<'a>(&'a self) -> Ref<'a, T> {
-        Ref(&self.0, self.1)
+        Ref(self.0.to_ref())
     }
 }
 
 impl<T: Codable> Owned<T> where [(); T::SIZE]: {
     pub fn to_mut<'a>(&'a mut self) -> Mut<'a, T> {
-        Mut(&mut self.0, self.1)
+        Mut(self.0.to_mut())
     }
 }
 
 impl<T: Codable> Owned<T> where [(); T::SIZE]: {
-    pub fn new(bytes: [u8; T::SIZE]) -> Self {
-        Self(bytes, Default::default())
+    pub const fn new(bytes: bytes::Owned<T>) -> Self {
+        Self(bytes)
     }
 
     pub fn encode(value: &T) -> Self {
-        let mut bytes = [0; T::SIZE];
-        value.encode(&mut bytes);
+        let mut bytes = bytes::Owned::filled_with(0);
+        value.encode(&mut bytes.to_mut());
         Self::new(bytes)
     }
 
     pub fn decode(&self) -> T {
-        T::decode(&self.0)
+        T::decode(&self.0.to_ref())
     }
 
     // pub fn mut_to<'a, I: Codable>(&'a mut self, lens: Lens<T, I>) -> Mut<'a, I> {
@@ -253,19 +254,19 @@ pub trait Write<T: Codable>: private::Write {
 
 impl<'a, T: Codable> Write<T> for Ref<'a, T> {
     fn write(&self, bytes: &mut bytes::Mut<'_, T>) {
-        bytes.copy_from_slice(self.0);
+        bytes.copy_from(&self.0);
     }
 }
 
 impl<'a, T: Codable> Write<T> for Mut<'a, T> {
     fn write(&self, bytes: &mut bytes::Mut<'_, T>) {
-        bytes.copy_from_slice(self.0);
+        bytes.copy_from(&self.0.to_ref());
     }
 }
 
 impl<T: Codable> Write<T> for Owned<T> where [(); T::SIZE]: {
     fn write(&self, bytes: &mut bytes::Mut<'_, T>) {
-        bytes.copy_from_slice(&self.0);
+        bytes.copy_from(&self.0.to_ref());
     }
 }
 

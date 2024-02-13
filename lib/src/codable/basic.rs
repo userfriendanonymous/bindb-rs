@@ -1,18 +1,17 @@
 //! Implementations of [`Instance`] for basic types.
 
-use crate::utils::index_array;
-
+use crate::buf;
 use super::Instance;
 
 impl Instance for u32 {
     const SIZE: usize = 4;
 
-    fn encode(&self, bytes: &mut [u8; Self::SIZE]) {
-        bytes.copy_from_slice(&self.to_le_bytes());
+    fn encode(&self, bytes: &mut buf::bytes::Mut<'_, Self>) {
+        bytes.copy_from(&(&self.to_le_bytes()).into());
     }
 
-    fn decode(bytes: &[u8; Self::SIZE]) -> Self where Self: Sized {
-        Self::from_le_bytes(bytes.try_into().unwrap())
+    fn decode(bytes: &buf::bytes::Ref<'_, Self>) -> Self where Self: Sized {
+        Self::from_le_bytes(*bytes.as_array())
     }
 }
 
@@ -88,19 +87,19 @@ impl Instance for u32 {
 impl<T: Instance> Instance for Option<T> {
     const SIZE: usize = T::SIZE + 1;
 
-    fn encode(&self, bytes: &mut [u8; Self::SIZE]) {
+    fn encode(&self, bytes: &mut buf::bytes::Mut<'_, Option<T>>) {
         match self {
             Some(v) => {
                 bytes[0] = 1;
-                v.encode(&mut unsafe { *(&mut bytes[1 ..] as *mut [u8]).cast() });
+                v.encode(&mut bytes.index_to(1));
             }
             None => bytes.fill(0)
         };
     }
 
-    fn decode(bytes: &[u8; T::SIZE + 1]) -> Self where Self: Sized {
+    fn decode(bytes: &buf::bytes::Ref<'_, Option<T>>) -> Self where Self: Sized {
         match bytes[0] {
-            1 => Some(T::decode(index_array(bytes, 1))),
+            1 => Some(T::decode(&bytes.index_to(1))),
             _ => None,
         }
     }
