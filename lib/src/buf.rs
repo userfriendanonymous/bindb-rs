@@ -10,7 +10,7 @@ mod private {
 
 impl<T: Codable> private::Write for T {}
 
-pub struct Ref<'a, T: Codable>(bytes::Ref<'a, T>);
+pub struct Ref<'a, T: Codable + ?Sized>(bytes::Ref<'a, T>);
 
 impl<'a, T: Codable> PartialEq for Ref<'a, T> {
     fn eq(&self, other: &Self) -> bool {
@@ -22,7 +22,7 @@ impl<'a, T: Codable> Eq for Ref<'a, T> {}
 
 impl<'a, T: Codable> Clone for Ref<'a, T> {
     fn clone(&self) -> Self {
-        Self::new(self.0)
+        Self::new(self.0.clone())
     }
 }
 
@@ -55,7 +55,7 @@ impl<'a, T: Codable> Ref<'a, T> {
     }
 }
 
-pub struct Mut<'a, T: Codable>(bytes::Mut<'a, T>);
+pub struct Mut<'a, T: Codable + ?Sized>(bytes::Mut<'a, T>);
 
 impl<'a, T: Codable> private::Write for Mut<'a, T> {}
 
@@ -119,10 +119,6 @@ impl<'a, T: Codable> Mut<'a, T> {
 
     pub fn to<I: Codable>(&'a mut self, lens: Lens<T, I>) -> Mut<'a, I> where [(); I::SIZE]: {
         Mut::new(self.0.index_to(lens.offset()))
-    }
-
-    pub fn ref_to<I: Codable>(&'a self, lens: Lens<T, I>) -> Ref<'a, I> where [(); I::SIZE]: {
-        Ref::new(self.0.index_to(lens.offset()).to_ref())
     }
 
     pub fn decode(&self) -> T {

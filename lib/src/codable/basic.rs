@@ -1,6 +1,6 @@
 //! Implementations of [`Instance`] for basic types.
 
-use crate::buf;
+use crate::{buf, lenser};
 use super::Instance;
 
 impl Instance for u32 {
@@ -12,6 +12,28 @@ impl Instance for u32 {
 
     fn decode(bytes: &buf::bytes::Ref<'_, Self>) -> Self where Self: Sized {
         Self::from_le_bytes(*bytes.as_array())
+    }
+
+    type Lenser = lenser::Empty<Self>;
+    fn lenser_from_root(root: lenser::Root<Self>) -> Self::Lenser {
+        lenser::Empty::new(root)
+    }
+}
+
+impl Instance for u64 {
+    const SIZE: usize = 8;
+
+    fn encode(&self, bytes: &mut buf::bytes::Mut<'_, Self>) {
+        bytes.copy_from(&(&self.to_le_bytes()).into());
+    }
+
+    fn decode(bytes: &buf::bytes::Ref<'_, Self>) -> Self where Self: Sized {
+        Self::from_le_bytes(*bytes.as_array())
+    }
+
+    type Lenser = lenser::Empty<Self>;
+    fn lenser_from_root(root: lenser::Root<Self>) -> Self::Lenser {
+        lenser::Empty::new(root)
     }
 }
 
@@ -87,7 +109,7 @@ impl Instance for u32 {
 impl<T: Instance> Instance for Option<T> {
     const SIZE: usize = T::SIZE + 1;
 
-    fn encode(&self, bytes: &mut buf::bytes::Mut<'_, Option<T>>) {
+    fn encode(&self, bytes: &mut buf::bytes::Mut<'_, Self>) {
         match self {
             Some(v) => {
                 bytes[0] = 1;
@@ -97,10 +119,15 @@ impl<T: Instance> Instance for Option<T> {
         };
     }
 
-    fn decode(bytes: &buf::bytes::Ref<'_, Option<T>>) -> Self where Self: Sized {
+    fn decode(bytes: &buf::bytes::Ref<'_, Self>) -> Self where Self: Sized {
         match bytes[0] {
             1 => Some(T::decode(&bytes.index_to(1))),
             _ => None,
         }
+    }
+
+    type Lenser = lenser::Empty<Self>;
+    fn lenser_from_root(root: lenser::Root<Self>) -> Self::Lenser {
+        lenser::Empty::new(root)
     }
 }

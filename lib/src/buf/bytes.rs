@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, ops::{Index, IndexMut, Range, RangeBounds}};
-use crate::utils::{slice_to_array, slice_to_array_mut};
+use crate::utils::slice_to_array;
 use super::Codable;
 
 pub struct Ref<'a, T>(&'a [u8], PhantomData<T>);
@@ -33,7 +33,7 @@ impl<'a, T: Codable> Ref<'a, T> {
         unsafe { slice_to_array(self.0) }
     }
 
-    pub const fn index_to<O: Codable>(&self, at: usize) -> Ref<'a, O> {
+    pub fn index_to<O: Codable>(&self, at: usize) -> Ref<'a, O> {
         Ref::new(&self.0[at .. at + O::SIZE])
     }
 
@@ -66,11 +66,11 @@ impl<'a, T: Codable> PartialEq for Mut<'a, T> {
 
 impl<'a, T: Codable> Eq for Mut<'a, T> {}
 
-impl<'a, T: Codable> Clone for Mut<'a, T> {
-    fn clone(&self) -> Self {
-        Self::new(self.0)
-    }
-}
+// impl<'a, T: Codable> Clone for Mut<'a, T> {
+//     fn clone(&self) -> Self {
+//         Self::new(self.0)
+//     }
+// }
 
 impl<'a, T: Codable> From<&'a mut [u8; T::SIZE]> for Mut<'a, T> {
     fn from(value: &'a mut [u8; T::SIZE]) -> Self {
@@ -79,15 +79,15 @@ impl<'a, T: Codable> From<&'a mut [u8; T::SIZE]> for Mut<'a, T> {
 }
 
 impl<'a, T: Codable> Mut<'a, T> {
-    const fn new(data: &'a mut [u8]) -> Self {
+    fn new(data: &'a mut [u8]) -> Self {
         Self(data, PhantomData)
     }
 
-    pub const fn fill(&mut self, value: u8) {
+    pub fn fill(&mut self, value: u8) {
         self.0.fill(value)
     }
 
-    pub const fn fill_with(&mut self, value: impl FnMut() -> u8) {
+    pub fn fill_with(&mut self, value: impl FnMut() -> u8) {
         self.0.fill_with(value)
     }
 
@@ -95,23 +95,23 @@ impl<'a, T: Codable> Mut<'a, T> {
         unsafe { slice_to_array(self.0) }
     }
 
-    pub const fn to_ref(&self) -> Ref<'a, T> {
+    pub const fn to_ref(&self) -> Ref<'_, T> {
         Ref::new(&*self.0)
     }
 
-    pub const fn index_to<O: Codable>(&self, at: usize) -> Mut<'a, O> {
+    pub fn index_to<O: Codable>(&mut self, at: usize) -> Mut<'_, O> {
         Mut::new(&mut self.0[at .. at + O::SIZE])
     }
 
-    pub const fn copy_within<R: RangeBounds<usize>>(&mut self, src: R, dest: usize) {
+    pub fn copy_within<R: RangeBounds<usize>>(&mut self, src: R, dest: usize) {
         self.0.copy_within(src, dest)
     }
 
-    pub const fn copy_from(&mut self, src: &Ref<'a, T>) {
+    pub fn copy_from(&mut self, src: &Ref<'_, T>) {
         self.0.copy_from_slice(src.0)
     }
 
-    pub const fn swap(&mut self, src: &mut Mut<'a, T>) {
+    pub fn swap(&mut self, src: &mut Mut<'_, T>) {
         self.0.swap_with_slice(src.0)
     }
 
@@ -119,8 +119,8 @@ impl<'a, T: Codable> Mut<'a, T> {
         Mut::new(&mut *(self.0 as *mut _))
     }
 
-    pub const fn into_owned(&mut self) -> Owned<T> where [(); T::SIZE]: {
-        Owned(unsafe { *slice_to_array_mut(self.0) })
+    pub fn into_owned(&self) -> Owned<T> where [(); T::SIZE]: {
+        self.to_ref().into_owned()
     }
 }
 
@@ -179,7 +179,7 @@ impl<T: Codable> Owned<T> where [(); T::SIZE]: {
         Ref::new(&self.0)
     }
 
-    pub const fn to_mut<'a>(&'a mut self) -> Mut<'a, T> {
+    pub fn to_mut<'a>(&'a mut self) -> Mut<'a, T> {
         Mut::new(&mut self.0)
     }
 }

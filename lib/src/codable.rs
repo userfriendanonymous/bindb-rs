@@ -1,7 +1,7 @@
 
 pub mod basic;
 // pub mod bytes;
-use super::{buf, RootLenser};
+use super::{buf, lenser};
 
 pub trait Instance where Self: Sized {
     const SIZE: usize;
@@ -14,10 +14,10 @@ pub trait Instance where Self: Sized {
     }
 
     type Lenser;
-    fn lenser_from_root(root: RootLenser<Self>) -> Self::Lenser;
+    fn lenser_from_root(root: lenser::Root<Self>) -> Self::Lenser;
 
     fn lenser() -> Self::Lenser {
-        Self::lenser_from_root(RootLenser::VALUE)
+        Self::lenser_from_root(lenser::Root::VALUE)
     }
 }
 

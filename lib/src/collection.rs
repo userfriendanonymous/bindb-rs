@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 use fmmap::{MmapFileExt as _, MmapFileMut, MmapFileMutExt as _};
-use crate::{codable, utils::{slice_to_array, slice_to_array_mut}};
+use crate::{utils::{slice_to_array, slice_to_array_mut}, Buf};
 use super::{entry, buf, Codable, Lens, AsBuf};
 
 #[derive(Debug)]
@@ -94,16 +94,16 @@ impl<Entry: Codable> Value<Entry> where [(); Entry::SIZE]: {
     }
 
     // region: Core functions.
-    pub fn buf_ref<'a, T: Codable>(&'a self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::Ref<'a, T>, fmmap::error::Error>
+    pub fn buf_ref<'a, T: Codable>(&self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::Ref<'_, T>, fmmap::error::Error>
     where [(); T::SIZE]: {
         let bytes = unsafe { slice_to_array(self.file_map.bytes(self.entry_lens_offset(lens, id), T::SIZE)?) };
-        Ok(buf::Ref::new(bytes))
+        Ok(buf::Ref::new(bytes.into()))
     }
 
-    pub fn buf_mut<'a, T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::Mut<'a, T>, fmmap::error::Error>
+    pub fn buf_mut<'a, T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::Mut<'_, T>, fmmap::error::Error>
     where [(); T::SIZE]: {
         let bytes = unsafe { slice_to_array_mut(self.file_map.bytes_mut(self.entry_lens_offset(lens, id), T::SIZE)?) };
-        Ok(buf::Mut::new(bytes))
+        Ok(buf::Mut::new(bytes.into()))
     }
 
     // pub fn buf_mut_ptr<T: Codable>(&mut self, lens: Lens<Entry, T>, id: entry::Id<Entry>) -> Result<buf::MutPtr<T>, fmmap::error::Error> {
@@ -121,7 +121,7 @@ impl<Entry: Codable> Value<Entry> where [(); Entry::SIZE]: {
             self.margin = self.max_margin + 1;
         }
         self.margin -= 1;
-        self.set(Lens::to_self(), id, entry).map_err(E::Fmmap)?;
+        self.set(Lens::FULL, id, entry).map_err(E::Fmmap)?;
         self.next_entry_id = self.next_entry_id.succ();
         self.file_map.write_u64(self.next_entry_id.as_u64(), 0).map_err(E::Fmmap)?;
         Ok(id)
@@ -215,7 +215,7 @@ impl<Entry: Codable> Value<Entry> where [(); Entry::SIZE]: {
     pub fn swap_remove(&mut self, id: entry::Id<Entry>) -> Result<(), SwapRemoveError> {
         type E = SwapRemoveError;
         if let Some(last_entry_id) = self.last_entry_id() {
-            self.swap(Lens::to_self(), id, last_entry_id).map_err(E::Fmmap)?;
+            self.swap(Lens::FULL, id, last_entry_id).map_err(E::Fmmap)?;
         }
         self.remove_last().map_err(E::RemoveLastError)?;
         Ok(())

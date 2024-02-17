@@ -1,5 +1,7 @@
-use std::marker::PhantomData;
+use std::{io::Empty, marker::PhantomData};
 use super::Codable;
+
+pub mod producer;
 
 pub struct Value<B, T>(usize, PhantomData<(B, T)>);
 
@@ -12,15 +14,15 @@ impl<B, T> Clone for Value<B, T> {
 impl<B, T> Copy for Value<B, T> {}
 
 impl<B> Value<B, B> {
-    // pub const TO_SELF: Self = Self::to_self();
+    pub const FULL: Self = Self::full();
 
-    pub fn to_self() -> Self {
+    pub const fn full() -> Self {
         Self::new(0)
     }
 }
 
 impl<B, T> Value<B, T> {
-    fn new(offset: usize) -> Self {
+    const fn new(offset: usize) -> Self {
         Self(offset, PhantomData)
     }
 
@@ -58,13 +60,3 @@ impl<B: Codable, T: Codable> Value<B, T> {
 //         Self::new(B::offset(self))
 //     }
 // }
-
-pub struct RootProducer<B>(PhantomData<B>);
-
-impl<B> RootProducer<B> {
-    pub(crate) const VALUE: Self = Self(PhantomData);
-
-    pub fn spawn<T>(&self, offset: usize) -> Value<B, T> {
-        Value::new(offset)
-    }
-}
