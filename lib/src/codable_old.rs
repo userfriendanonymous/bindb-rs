@@ -1,9 +1,16 @@
-
 pub mod basic;
 // pub mod bytes;
 use super::{buf, lenser};
 
-pub trait Instance where Self: Sized {
+pub trait Buf {
+    type Buf<B>;
+    fn buf<B>(bytes: B) -> Self::Buf<B>;
+}
+
+pub trait Instance
+where
+    Self: Sized,
+{
     const SIZE: usize;
 
     fn encode(&self, bytes: &mut buf::bytes::Mut<'_, Self>);

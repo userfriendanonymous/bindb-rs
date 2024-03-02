@@ -12,6 +12,5 @@ edition = "2021"
 [dependencies]
 extend = "1.2.0"
 fmmap = "0.3.3"
+memmap2 = "0.9.4"
 macros = { version = "0.1.0", path = "../macros" }
-memmap = "0.7.0"
-mmap = "0.1.1"
