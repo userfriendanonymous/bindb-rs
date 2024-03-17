@@ -1,11 +1,11 @@
 use crate::{
-    entry,
+    entry::{self, Readable}, lens,
     utils::{slice_to_array, slice_to_array_mut},
-    Entry,
+    Entry, Lens,
 };
 use std::{fs::File, path::Path};
 // use super::{entry, buf, Codable, Lens, AsBuf};
-use memmap2::{MmapAsRawDesc, MmapMut};
+use memmap2::{MmapAsRawDesc, MmapMut, MmapOptions};
 
 #[derive(Debug)]
 pub enum GetError {
@@ -42,9 +42,11 @@ pub enum OpenError {
 }
 
 #[derive(Clone, Debug)]
-pub struct Meta<E> {
+pub struct Header<E, M> {
     next_entry_id: entry::Id<E>,
+    meta: M
 }
+
 
 pub struct Value<E> {
     file: File,
@@ -54,17 +56,14 @@ pub struct Value<E> {
     max_margin: u64,
 }
 
-impl<E: Entry> Value<E> {
-    pub unsafe fn new<F: MmapAsRawDesc>(path: F) -> Result<Self, NewError> {
+impl<E: Entry> Value<E> where [(); E::LEN]: {
+    pub unsafe fn create(file: &File) -> Result<Self, NewError> {
         type E = NewError;
-        let file = File::create(&path).map_err(E::Io)?;
         file.set_len(8).map_err(E::Io)?;
         let mut file_map = MmapMut::map_mut(file);
 
         let next_entry_id = entry::Id::zero();
-        file_map
-            .write_u64(next_entry_id.as_u64(), 0)
-            .map_err(E::Fmmap)?;
+        
         Ok(Self {
             margin: 0,
             max_margin: 1000,
@@ -101,20 +100,17 @@ impl<E: Entry> Value<E> {
     // region: Core functions.
     pub unsafe fn buf_unchecked(&self, id: entry::Id<E>) -> entry::BufConst<'_, E> {
         let offset = self.entry_offset(id);
-        let bytes = entry::Bytes::new(self.file_map.get_unchecked(offset..offset + Entry::LEN));
+        let bytes = entry::Bytes::new(self.file_map.get_unchecked(offset..offset + E::LEN));
         E::buf(bytes)
     }
 
-    pub unsafe fn buf_unchecked_mut(&self, id: entry::Id<Entry>) -> buf::Mut<'_, Entry> {
+    pub unsafe fn buf_unchecked_mut(&self, id: entry::Id<E>) -> entry::BufMut<'_, E> {
         let offset = self.entry_offset(id);
-        let bytes = self
-            .file_map
-            .as_slice()
-            .get_unchecked_mut(offset..offset + Entry::LEN);
-        Ok(Entry::buf(buf::bytes::Mut::new(bytes)))
+        let bytes = entry::Bytes::new(self.file_map.get_unchecked_mut(offset..offset + E::LEN));
+        E::buf(bytes)
     }
 
-    pub fn buf(&self, id: entry::Id<Entry>) -> Option<buf::Ref<'_, Entry>> {
+    pub fn buf(&self, id: entry::Id<E>) -> Option<entry::BufConst<'_, E>> {
         if self.next_entry_id > id {
             Some(unsafe { self.buf_unchecked(id) })
         } else {
@@ -122,7 +118,7 @@ impl<E: Entry> Value<E> {
         }
     }
 
-    pub fn buf_mut(&mut self, id: entry::Id<Entry>) -> Option<buf::Mut<'_, Entry>> {
+    pub fn buf_mut(&mut self, id: entry::Id<E>) -> Option<entry::BufMut<'_, E>> {
         if self.next_entry_id > id {
             Some(unsafe { self.buf_unchecked_mut(id) })
         } else {
@@ -131,21 +127,19 @@ impl<E: Entry> Value<E> {
     }
     // endregion: Core functions.
 
-    pub fn add(&mut self, entry: &impl buf::Write<Entry>) -> Result<entry::Id<Entry>, AddError> {
+    pub fn add(&mut self, entry: &impl entry::Readable<E>) -> Result<entry::Id<E>, AddError> {
         type E = AddError;
         let id = self.next_entry_id;
         if self.margin == 0 {
-            let new_size = self.entry_offset(id + self.max_margin + 2) as u64;
-            self.file.set_len(new_size).map_err(E::Io)?;
-            self.file_map.truncate(new_size).map_err(E::Fmmap)?;
+            let new_len = self.entry_offset(id + self.max_margin + 2) as u64;
+            self.file.set_len(new_len).map_err(E::Io)?;
+            self.file_map = unsafe { MmapOptions::new().len(new_len).map_mut(&self.file) };
             self.margin = self.max_margin + 1;
         }
         self.margin -= 1;
-        self.set(Lens::FULL, id, entry).map_err(E::Fmmap)?;
+        entry.write_to(&mut unsafe { self.buf_unchecked_mut(id) });
         self.next_entry_id = self.next_entry_id.succ();
-        self.file_map
-            .write_u64(self.next_entry_id.as_u64(), 0)
-            .map_err(E::Fmmap)?;
+        self.file_map[0..8] = self.next_entry_id.as_u64().to_be_bytes();
         Ok(id)
     }
 
@@ -153,111 +147,58 @@ impl<E: Entry> Value<E> {
         type E = RemoveLastError;
         let id = self.next_entry_id.prev();
         if self.margin >= self.max_margin {
-            let new_size = self.entry_offset(id) as u64;
-            self.file.set_len(new_size).map_err(E::Io)?;
-            self.file_map.truncate(new_size).map_err(E::Fmmap)?;
+            let new_len = self.entry_offset(id) as u64;
+            self.file.set_len(new_len).map_err(E::Io)?;
+            self.file_map = unsafe { MmapOptions::new().len(new_len).map_mut(&self.file) };
             self.margin = 0;
         }
         self.margin += 1;
-        self.file_map
-            .write_u64(self.next_entry_id.as_u64(), 0)
-            .map_err(E::Fmmap)?;
+        self.file_map[0..8] = self.next_entry_id.as_u64().to_be_bytes();
         Ok(())
     }
 
-    pub fn all_ids(&self) -> impl Iterator<Item = entry::Id<Entry>> {
+    pub fn all_ids(&self) -> impl Iterator<Item = entry::Id<E>> {
         entry::id::Range(entry::Id::zero(), self.next_entry_id)
     }
 
     // Convenience functions.
-    pub fn get<O: Buf>(&self, lens: impl Lens<Entry, O>, id: entry::Id<Entry>) -> Option<O>
-    where
-        O: buf::Decode,
-    {
-        let buf = lens.view(self.buf(id)?);
-        Some(O::decode(&bytes))
-    }
-
-    pub fn set(
-        &'a mut self,
-        lens: Lens<Entry, T>,
-        id: entry::Id<Entry>,
-        value: &impl buf::Write<T>,
-    ) -> Result<(), fmmap::error::Error>
-    where
-        [(); T::SIZE]:,
-    {
-        let mut buf_mut = self.buf_mut(lens, id)?;
-        buf_mut.set(value);
-        Ok(())
-    }
-
-    pub fn find<T: Codable>(
+    pub fn find<L: Lens<In = E>>(
         &self,
-        lens: Lens<Entry, T>,
+        lens: L,
         // ids: impl Iterator<Item = entry::Id<Entry>>,
-        f: impl Fn(&T) -> bool,
-    ) -> Result<Option<(entry::Id<Entry>, T)>, GetError>
-    where
-        [(); T::SIZE]:,
-    {
+        f: impl Fn(entry::BufConst<'_, L::Out>) -> bool,
+    ) -> Result<Option<(entry::Id<E>, entry::BufConst<'_, L::Out>)>, GetError> {
         for id in self.all_ids() {
-            let data = self.get(lens, id)?;
-            if f(&data) {
-                return Ok(Some((id, data)));
+            let buf = lens.apply(self.buf(id));
+            if f(L::Out::buf_rb_const(&buf)) {
+                return Ok(Some((id, buf)));
             }
         }
         Ok(None)
     }
 
-    pub fn find_exact<'a, T: Codable>(
-        &self,
-        lens: Lens<Entry, T>,
-        // ids: impl Iterator<Item = entry::Id<Entry>>,
-        other: &'a impl AsBuf<'a, T>,
-    ) -> Result<Option<entry::Id<Entry>>, fmmap::error::Error>
-    where
-        [(); T::SIZE]:,
-    {
-        let buf = other.as_buf();
-        let buf = buf.to_ref();
-        for id in self.all_ids() {
-            let data = self.buf_ref(lens, id)?;
-            if buf == data {
-                return Ok(Some(id));
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn copy<T: Codable>(
+    pub fn copy<L: Lens<In = E> + Clone>(
         &mut self,
-        lens: Lens<Entry, T>,
-        src_id: entry::Id<Entry>,
-        dst_id: entry::Id<Entry>,
-    ) -> Result<(), fmmap::error::Error>
-    where
-        [(); T::SIZE]:,
-    {
-        let mut dst = unsafe { self.buf_mut(lens, dst_id)?.detach() };
-        let src = self.buf_ref(lens, src_id)?;
-        dst.set(&src);
+        lens: L,
+        src_id: entry::Id<E>,
+        dst_id: entry::Id<E>,
+    ) -> Result<(), ()> {
+        let mut dst = unsafe { entry::buf_detach(lens.clone().apply(self.buf_mut(dst_id).ok_or(())?)) };
+        let src = lens.apply(self.buf(src_id)?);
+        <L::Out as Entry>::buf_copy_to(src, dst);
         Ok(())
     }
 
-    pub fn swap<T: Codable>(
+    pub fn swap<L: Lens<In = E> + Clone>(
         &mut self,
-        lens: Lens<Entry, T>,
-        a_id: entry::Id<Entry>,
-        b_id: entry::Id<Entry>,
-    ) -> Result<(), fmmap::error::Error>
-    where
-        [(); T::SIZE]:,
-    {
+        lens: L,
+        a_id: entry::Id<E>,
+        b_id: entry::Id<E>,
+    ) -> Result<(), ()> {
         if a_id != b_id {
-            let mut a = unsafe { self.buf_mut(lens, a_id)?.detach() };
-            let mut b = self.buf_mut(lens, b_id)?;
-            a.swap(&mut b);
+            let mut a = unsafe { entry::buf_detach(lens.apply(self.buf_mut(a_id).ok_or(())?)) };
+            let mut b = lens.apply(self.buf_mut(b_id).ok_or(())?);
+            entry::buf_swap(a, b);
         }
         Ok(())
     }
@@ -265,12 +206,42 @@ impl<E: Entry> Value<E> {
     /// Swaps given entry with the last entry and removes it.
     /// WARNING: This method changes ID of the last entry in this collection.
     /// You probably should only use this if this collection is used as a stack/set and not as a map.
-    pub fn swap_remove(&mut self, id: entry::Id<Entry>) -> Result<(), SwapRemoveError> {
+    pub fn swap_remove(&mut self, id: entry::Id<E>) -> Result<(), SwapRemoveError> {
         type E = SwapRemoveError;
         if let Some(last_entry_id) = self.last_entry_id() {
-            self.swap(Lens::FULL, id, last_entry_id).map_err(E::Fmmap)?;
+            self.swap(lens::identity(), id, last_entry_id).map_err(E::Fmmap)?;
         }
         self.remove_last().map_err(E::RemoveLastError)?;
         Ok(())
+    }
+}
+
+impl<E: Entry> Value<E> {
+    pub fn get<L: Lens<In = E>>(&self, lens: L, id: entry::Id<E>) -> Option<L::Out>
+    where
+        L::Out: entry::Codable,
+    {
+        self.buf(id).map(|x| L::Out::decode(lens.apply(x)))
+    }
+
+    pub fn set<L: Lens<In = E>>(
+        &self,
+        lens: L,
+        id: entry::Id<E>,
+        value: impl entry::Readable<L::Out>,
+    ) -> bool
+    where
+        L::Out: entry::Codable,
+    {
+        if let Some(mut buf) = self.buf_mut(id) {
+            value.write_to(&mut buf);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn linear_search<L: Lens<In = E>>(&self, lens: L, value: impl entry::Readable<L::Out>) {
+        let buf = value.into_buf();
     }
 }

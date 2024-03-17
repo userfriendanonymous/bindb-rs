@@ -1,19 +1,22 @@
-use proc_macro::TokenStream;
-use quote::quote;
 use syn::{parse::Parse, spanned::Spanned};
 
-pub mod r#struct;
-// pub mod r#enum;
-
-pub struct Input {
-    lenser: Option<syn::ItemType>,
-    item: Item,
+pub struct Meta {
+    pub buf: Option<syn::ItemType>,
+    pub len: Option<syn::ItemConst>,
 }
 
-impl Parse for Input {
+pub struct Value {
+    item: Item,
+    meta: Meta,
+}
+
+impl Parse for Value {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut item = None;
-        let mut lenser = None;
+        let mut meta = Meta {
+            buf: None,
+            len: None,
+        };
 
         let mut set_item = |span: proc_macro2::Span, value: Item| {
             if item.is_none() {
@@ -33,23 +36,39 @@ impl Parse for Input {
                     set_item(value.span(), Item::Struct(value))?;
                 }
                 syn::Item::Type(value) => match value.ident.to_string().as_str() {
-                    "Lenser" => {
-                        if lenser.is_none() {
-                            lenser = Some(value)
+                    "Buf" => {
+                        if meta.buf.is_none() {
+                            meta.buf = Some(value)
                         } else {
                             return Err(syn::Error::new(
                                 value.ident.span(),
-                                "`Lenser` is defined twice.",
+                                "`Buf` is defined twice.",
                             ));
                         }
-                    }
+                    },
+
+                    "For" => {
+                        set_item(value.span(), Item::For(*value.ty))?;
+                    },
                     _ => {
                         return Err(syn::Error::new(
                             value.ident.span(),
-                            "Unexpected type alias. Only `Lenser` is allowed.",
+                            "Unexpected type alias. Only `Buf` is allowed.",
                         ))
                     }
                 },
+                syn::Item::Const(value) => match value.ident.to_string().as_str() {
+                    "LEN" => {
+                        if meta.len.is_none() {
+                            meta.len = Some(value)
+                        } else {
+                            return Err(syn::Error::new(
+                                value.ident.span(),
+                                "`LEN` is defined twice.",
+                            ));
+                        }
+                    }
+                }
                 other => return Err(syn::Error::new(other.span(), "Unexpected item.")),
             }
         }
@@ -58,26 +77,12 @@ impl Parse for Input {
             return Err(input.error("Item not found."));
         };
 
-        Ok(Self { lenser, item })
+        Ok(Self { item, meta })
     }
 }
 
 pub enum Item {
     Enum(syn::ItemEnum),
     Struct(syn::ItemStruct),
-}
-
-pub fn derive(input: Input, lib_path: syn::Path) -> TokenStream {
-    match input.item {
-        Item::Struct(item) => {
-            let lenser_info = input
-                .lenser
-                .ok_or("Provide a lenser: type Lenser = SomeLenser;")
-                .unwrap();
-            r#struct::derive(item, lenser_info, lib_path)
-        }
-        Item::Enum(item) => {
-            panic!("Enums aren't yet supported")
-        }
-    }
+    For(syn::Type),
 }

@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse::{Parse, ParseStream}, parse_macro_input};
 
-mod codable;
+mod entry;
 
 struct InputWithLibPath<Rest> {
     path: syn::Path,
@@ -21,9 +21,9 @@ impl<Rest: Parse> Parse for InputWithLibPath<Rest> {
 }
  
 #[proc_macro]
-pub fn derive_codable(input: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(input as InputWithLibPath<codable::Input>);
-    codable::derive(item.rest, item.path)
+pub fn derive_entry(input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as InputWithLibPath<entry::Input>);
+    entry::derive(item.rest, item.path)
 }
 
 struct MacroWithCratePath {

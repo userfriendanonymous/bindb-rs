@@ -16,8 +16,8 @@ pub fn derive(item: syn::ItemEnum, lib: syn::Path) -> TokenStream {
                 syn::Fields::Unit => {
                     quote! {
                         Self::#variant_ident => {
-                            <#tag_ty as #lib::Codable>::encode(#variant_id, &mut bytes.index_to(0));
-                            bytes[<#tag_ty as #lib::Codable>::SIZE .. <Self as #lib::Codable>::SIZE].fill(0);
+                            <#tag_ty as #lib::Entry>::encode(#variant_id, &mut bytes.index_to(0));
+                            bytes[<#tag_ty as #lib::Entry>::SIZE .. <Self as #lib::Entry>::SIZE].fill(0);
                         }
                     }
                 },
@@ -28,7 +28,7 @@ pub fn derive(item: syn::ItemEnum, lib: syn::Path) -> TokenStream {
                         let field_ty = &field.ty;
                         quote! {
                             self.#field_ident.encode(&mut bytes.index_to(cursor));
-                            cursor += <#field_ty as #lib::Codable>::SIZE;
+                            cursor += <#field_ty as #lib::Entry>::SIZE;
                         }
                     });
 
@@ -36,7 +36,7 @@ pub fn derive(item: syn::ItemEnum, lib: syn::Path) -> TokenStream {
                         Self::#variant_ident { #( #match_fields ),* } => {
                             let mut cursor: usize = 0;
                             #( #encode_fields )*
-                            bytes[cursor .. <Self as #lib::Codable>::SIZE].fill(0);
+                            bytes[cursor .. <Self as #lib::Entry>::SIZE].fill(0);
                         }
                     }
                 },
@@ -55,7 +55,7 @@ pub fn derive(item: syn::ItemEnum, lib: syn::Path) -> TokenStream {
     quote! {
         #item
 
-        impl #lib::Codable for #item_ident {
+        impl #lib::Entry for #item_ident {
             const SIZE: usize = #size;
 
             fn encode(&self, bytes: &mut #lib::buf::bytes::Mut<'_, Self>) {

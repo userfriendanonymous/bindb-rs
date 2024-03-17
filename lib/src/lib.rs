@@ -2,6 +2,10 @@
 #![feature(associated_const_equality)]
 #![feature(generic_const_items)]
 #![feature(trait_alias)]
+#![feature(trace_macros, log_syntax)]
+
+trace_macros!(true);
+
 // pub use lens::{Value as Lens, producer as lenser};
 // pub use codable::Instance as Codable;
 // pub use collection::Value as Collection;
@@ -13,11 +17,13 @@ pub use entry::Instance as Entry;
 pub use macros;
 use macros::macro_with_crate_path;
 // pub use ownership::Instance as Ownership;
+pub use lens::Instance as Lens;
 pub use type_fn::Instance as TypeFn;
 // pub mod buf;
 pub mod collection;
 pub mod entry;
 pub mod lens;
+// pub mod ref_variant;
 // pub mod ownership;
 mod private;
 pub mod type_fn;
@@ -219,8 +225,20 @@ mod utils;
 // //     }
 // // }
 
-// macro_with_crate_path! {macros::derive_codable; codable}
+macro_with_crate_path! {macros::derive_entry; entry}
 
+entry! {
+    type Buf = EmptyBuf;
+    struct Empty;
+}
+
+entry! {
+    type Buf = CoolBuf;
+    struct Cool {
+        pub f: Empty,
+        pub d: Empty,
+    }
+}
 // codable! {
 //     type Lenser = ItemLenser;
 //     #[derive(Debug, Default)]
