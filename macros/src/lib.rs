@@ -23,7 +23,7 @@ impl<Rest: Parse> Parse for InputWithLibPath<Rest> {
 #[proc_macro]
 pub fn derive_entry(input: TokenStream) -> TokenStream {
     let item = parse_macro_input!(input as InputWithLibPath<entry::Input>);
-    entry::derive(item.rest, item.path)
+    entry::derive(item.rest, &item.path).into()
 }
 
 struct MacroWithCratePath {
@@ -47,6 +47,7 @@ impl Parse for MacroWithCratePath {
 pub fn macro_with_crate_path(input: TokenStream) -> TokenStream {
     let MacroWithCratePath { input_path, output_name } = parse_macro_input!(input as MacroWithCratePath);
     quote! {
+        #[macro_export]
         macro_rules! #output_name {
             ($($arg:tt)*) => {
                 $crate::#input_path! {$crate;$($arg)*}

@@ -5,29 +5,6 @@ pub struct Value<T>(u64, PhantomData<T>);
 
 pub struct Buf<BV: super::bytes::Variant>(super::Bytes<BV, 8>);
 
-impl<T> super::Instance for Value<T> {
-    const LEN: usize = 8;
-    type Buf<BV: super::bytes::Variant> = Buf<BV>;
-    fn buf<BV: super::bytes::Variant>(bytes: super::Bytes<BV, { Self::LEN }>) -> Self::Buf<BV> {
-        Buf(bytes)
-    }
-    fn buf_mut_as_const<'a>(buf: &'a super::BufMut<'a, Self>) -> super::BufConst<'a, Self> {
-        Buf(buf.0.as_const())
-    }
-    fn buf_owned_as_const(buf: &super::BufOwned<Self>) -> super::BufConst<'_, Self> {
-        Buf(buf.0.as_const())
-    }
-    fn buf_owned_as_mut(buf: &mut super::BufOwned<Self>) -> super::BufMut<'_, Self> {
-        Buf(buf.0.as_mut())
-    }
-    fn buf_rb_const<'a>(buf: &'a super::BufConst<'a, Self>) -> super::BufConst<'a, Self> {
-        Buf(buf.0.rb_const())
-    }
-    fn buf_rb_mut<'a>(buf: &'a mut super::BufMut<'a, Self>) -> super::BufMut<'a, Self> {
-        Buf(buf.0.rb_mut())
-    }
-}
-
 impl<T> Debug for Value<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Id({})", self.0))

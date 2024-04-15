@@ -2,10 +2,10 @@
 #![feature(associated_const_equality)]
 #![feature(generic_const_items)]
 #![feature(trait_alias)]
-#![feature(trace_macros, log_syntax)]
 
-trace_macros!(true);
+extern crate macros;
 
+macro_with_crate_path! { macros::derive_entry; entry }
 // pub use lens::{Value as Lens, producer as lenser};
 // pub use codable::Instance as Codable;
 // pub use collection::Value as Collection;
@@ -14,13 +14,14 @@ trace_macros!(true);
 // pub use lens::Instance as Lens;
 // pub use buf::Instance as Buf;
 pub use entry::Instance as Entry;
-pub use macros;
 use macros::macro_with_crate_path;
 // pub use ownership::Instance as Ownership;
 pub use lens::Instance as Lens;
 pub use type_fn::Instance as TypeFn;
 // pub mod buf;
 pub mod collection;
+
+#[macro_use]
 pub mod entry;
 pub mod lens;
 // pub mod ref_variant;
@@ -224,8 +225,6 @@ mod utils;
 // //         self.0.spawn(<Option<u32>>::SIZE)
 // //     }
 // // }
-
-macro_with_crate_path! {macros::derive_entry; entry}
 
 entry! {
     type Buf = EmptyBuf;

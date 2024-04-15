@@ -1,88 +1,115 @@
+use std::collections::BTreeMap;
+
 use syn::{parse::Parse, spanned::Spanned};
 
-pub struct Meta {
-    pub buf: Option<syn::ItemType>,
-    pub len: Option<syn::ItemConst>,
-}
-
 pub struct Value {
-    item: Item,
-    meta: Meta,
+    pub items: BTreeMap<syn::Ident, Item>,
+    pub impls: Vec<syn::ItemImpl>,
+    pub macros: Vec<syn::ItemMacro>,
 }
 
 impl Parse for Value {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut item = None;
-        let mut meta = Meta {
-            buf: None,
-            len: None,
-        };
-
-        let mut set_item = |span: proc_macro2::Span, value: Item| {
-            if item.is_none() {
-                item = Some(value);
-                Ok(())
-            } else {
-                Err(syn::Error::new(span, "Only single item is allowed."))
-            }
-        };
+        let mut impls = Vec::new();
+        let mut macros = Vec::new();
+        let mut items = BTreeMap::new();
 
         while !input.is_empty() {
             match input.parse()? {
-                syn::Item::Enum(value) => {
-                    set_item(value.span(), Item::Enum(value))?;
-                }
                 syn::Item::Struct(value) => {
-                    set_item(value.span(), Item::Struct(value))?;
+                    items.insert(value.ident.clone(), Item::Struct(value));
                 }
-                syn::Item::Type(value) => match value.ident.to_string().as_str() {
-                    "Buf" => {
-                        if meta.buf.is_none() {
-                            meta.buf = Some(value)
-                        } else {
-                            return Err(syn::Error::new(
-                                value.ident.span(),
-                                "`Buf` is defined twice.",
-                            ));
-                        }
-                    },
-
-                    "For" => {
-                        set_item(value.span(), Item::For(*value.ty))?;
-                    },
-                    _ => {
-                        return Err(syn::Error::new(
-                            value.ident.span(),
-                            "Unexpected type alias. Only `Buf` is allowed.",
-                        ))
-                    }
+                syn::Item::Enum(value) => {
+                    items.insert(value.ident.clone(), Item::Enum(value));
+                }
+                syn::Item::Impl(value) => {
+                    impls.push(value);
+                }
+                syn::Item::Macro(value) => {
+                    macros.push(value);
                 },
-                syn::Item::Const(value) => match value.ident.to_string().as_str() {
-                    "LEN" => {
-                        if meta.len.is_none() {
-                            meta.len = Some(value)
-                        } else {
-                            return Err(syn::Error::new(
-                                value.ident.span(),
-                                "`LEN` is defined twice.",
-                            ));
-                        }
-                    }
-                }
-                other => return Err(syn::Error::new(other.span(), "Unexpected item.")),
+                value => return Err(syn::Error::new(value.span(), "Unexpected item."))
             }
         }
 
-        let Some(item) = item else {
-            return Err(input.error("Item not found."));
-        };
+        Ok(Self { items, impls, macros })
 
-        Ok(Self { item, meta })
+        // let mut set_item = |span: proc_macro2::Span, value: Item| {
+        //     if item.is_none() {
+        //         item = Some(value);
+        //         Ok(())
+        //     } else {
+        //         Err(syn::Error::new(span, "Only single item is allowed."))
+        //     }
+        // };
+
+        // while !input.is_empty() {
+        //     match input.parse()? {
+        //         syn::Item::Enum(value) => {
+        //             set_item(value.span(), Item::Enum(value))?;
+        //         }
+        //         syn::Item::Struct(value) => {
+        //             set_item(value.span(), Item::Struct(value))?;
+        //         }
+        //         syn::Item::Type(value) => match value.ident.to_string().as_str() {
+        //             "Buf" => {
+        //                 buf = Some(value)
+        //             },
+
+        //             "For" => {
+        //                 set_item(value.span(), Item::For(value))?;
+        //             },
+        //             _ => {
+        //                 return Err(syn::Error::new(
+        //                     value.ident.span(),
+        //                     "Unexpected type alias. Only `Buf` is allowed.",
+        //                 ))
+        //             }
+        //         },
+        //         syn::Item::Impl(value) => {
+
+                //     let generics = value.generics;
+                    // let target = *value.self_ty;
+                //     let kind = match 
+                //         value.trait_.ok_or(syn::Error::new(value.span(), "Must have trait"))?
+                //             .1.require_ident().map_err(|x| x)?.to_string().as_str()
+                //     {
+                //         "Instance" => {
+                //             let mut len = None;
+                //             let mut buf = None;
+                //             for item in value.items {
+                //                 match item {
+                //                     syn::ImplItem::Const(value) => match value.ident.to_string().as_str() {
+                //                         "LEN" => len = Some(value),
+                //                     }
+                //                     syn::ImplItem::Type(value) => match value.ident.to_string().as_str() {
+                //                         "Buf" => buf = Some(value)
+                //                     },
+                //                     _ => return Err(syn::Error::new(item.span(), "Unexpected item.")),
+                //                 }
+                //             }
+                //             ImplKind::Instance { buf: buf.ok_or(syn::Error::new(value.span(), "Buf expected"))?, len }
+                //         }
+                //     };
+                //     impls.push(Impl {
+                //         generics,
+                //         target,
+                //         kind
+                //     });
+                // },
+                // other => return Err(syn::Error::new(other.span(), "Unexpected item.")),
+            // }
+        // }
+
+        // let Some(item) = item else {
+        //     return Err(input.error("Item not found."));
+        // };
+
+        // Ok(Self { item, meta: Meta { buf: buf.ok_or(syn::Error::new(input.span(), "Buf expected."))?, impls } })
     }
 }
 
 pub enum Item {
     Enum(syn::ItemEnum),
     Struct(syn::ItemStruct),
-    For(syn::Type),
 }

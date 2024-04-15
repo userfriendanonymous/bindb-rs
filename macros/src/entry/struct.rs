@@ -1,11 +1,12 @@
 use proc_macro::TokenStream;
 use quote::quote;
+use syn::spanned::Spanned;
 
 
 pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -> TokenStream {
     let item_ident = item.ident.clone();
 
-    let buf_info = meta.buf.unwrap();
+    let buf_info = meta.buf;
 
     let buf_ident = match buf_info.ty.as_ref() {
         syn::Type::Path(path) => path.path.require_ident().unwrap(),
@@ -33,7 +34,7 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
                     let ident = field.ident.unwrap();
                     let ty = field.ty;
                     quote! {
-                        <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(buf.0.const_index(cursor)));
+                        <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(unsafe { buf.0.const_index(cursor) }));
                         cursor += <#ty as #lib::Entry>::LEN;
                     }
                 });
@@ -49,7 +50,7 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
                     let ty = &field.ty;
                     quote! {
                         #ident: {
-                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(buf.0.const_index(cursor)));
+                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { buf.0.const_index(cursor) }));
                             cursor += <#ty as #lib::Entry>::LEN;
                             v
                         }
@@ -83,25 +84,13 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
             }
         },
         syn::Fields::Unnamed(fields) => {
-            len = {
-                let iter = fields.unnamed.clone().into_iter().map(|field| {
-                    let ty = field.ty;
-                    quote! {
-                        <#ty as #lib::Entry>::SIZE
-                    }
-                });
-                quote! {
-                    #( #iter )+*
-                }
-            };
-
             codable_encode = {
-                let iter = fields.unnamed.clone().into_iter().enumerate().map(|(idx, field)| {
-                    let ty = field.ty;
+                let iter = fields.unnamed.iter().enumerate().map(|(idx, field)| {
+                    let ty = &field.ty;
                     let idx = syn::Index::from(idx);
                     quote! {
-                        #lib::Entry::encode(&self.#idx, &mut bytes.index_to(cursor));
-                        cursor += <#ty as #lib::Entry>::SIZE;
+                        <#ty as #lib::entry::Codable>::encode(&self.#idx, <#ty as #lib::Entry>::buf(unsafe { buf.0.const_index(cursor) }));
+                        cursor += <#ty as #lib::Entry>::LEN;
                     }
                 });
 
@@ -112,12 +101,12 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
             };
 
             codable_decode = {
-                let iter = fields.unnamed.into_iter().enumerate().map(|(_idx, field)| {
-                    let ty = field.ty;
+                let iter = fields.unnamed.iter().enumerate().map(|(_idx, field)| {
+                    let ty = &field.ty;
                     quote! {
                         {
-                            let v = #lib::Entry::decode(&bytes.index_to(cursor));
-                            cursor += <#ty as #lib::Entry>::SIZE;
+                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { buf.0.const_index(cursor) }));
+                            cursor += <#ty as #lib::Entry>::LEN;
                             v
                         }
                     }
@@ -128,6 +117,24 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
                         #( #iter ),*
                     )
                 }
+            };
+
+            {
+                let mut cursor = quote! { 0 };
+                for (idx, field) in fields.unnamed.clone().into_iter().enumerate() {
+                    let ty = &field.ty;
+                    let f_ident = syn::Ident::new(&format!("field_{idx}"), field.span());
+                    buf_impl.push(quote! {
+                        pub fn #f_ident(self) -> #buf_ident<BV> {
+                            const START_INDEX: usize = #cursor;
+                            #buf_ident(unsafe { self.0.const_index(START_INDEX) })
+                        }
+                    });
+                    cursor = quote! {
+                        #cursor + <#ty as #lib::Entry>::LEN
+                    };
+                }
+                len = cursor;
             }
         }
     }

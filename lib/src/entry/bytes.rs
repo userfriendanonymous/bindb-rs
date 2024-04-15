@@ -1,4 +1,4 @@
-use crate::utils::slice_to_array;
+use crate::utils::{slice_to_array, slice_to_array_mut};
 use std::ops::RangeBounds;
 pub use variant::Instance as Variant;
 mod private {
@@ -52,8 +52,8 @@ impl<V: variant::AsConst, const L: usize> Value<V, L> {
         V::as_const(&self.0)
     }
 
-    pub fn as_array(self) -> [u8; L] {
-        *unsafe { slice_to_array(self.slice()) }
+    pub fn as_array(&self) -> &[u8; L] {
+        unsafe { slice_to_array(self.slice()) }
     }
 
     pub fn as_const(&self) -> Const<'_, L> {
@@ -64,6 +64,10 @@ impl<V: variant::AsConst, const L: usize> Value<V, L> {
 impl<V: variant::AsMut, const L: usize> Value<V, L> {
     pub fn slice_mut(&mut self) -> &mut [u8] {
         V::as_mut(&mut self.0)
+    }
+
+    pub fn as_array_mut(&self) -> &mut [u8; L] {
+        unsafe { slice_to_array_mut(self.slice_mut()) }
     }
 
     pub fn as_mut(&mut self) -> Mut<'_, L> {

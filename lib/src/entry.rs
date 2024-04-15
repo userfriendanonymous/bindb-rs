@@ -5,6 +5,8 @@ pub use id::Value as Id;
 
 pub mod bytes;
 pub mod id;
+
+#[macro_use]
 pub mod impls;
 
 pub type Buf<T: Instance, BV: bytes::Variant> = T::Buf<BV>;

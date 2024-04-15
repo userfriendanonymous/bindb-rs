@@ -2,146 +2,27 @@ use proc_macro::TokenStream;
 use quote::quote;
 
 
-pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -> TokenStream {
-    let item_ident = item.ident.clone();
+pub fn derive(item: syn::ItemType, meta: super::input::Meta, lib: syn::Path) -> TokenStream {
+    let item_ty = item.ty;
+    let item_generics = item.generics;
+
+    let len = *meta.len.unwrap().expr;
 
     let buf_info = meta.buf.unwrap();
-
     let buf_ident = match buf_info.ty.as_ref() {
         syn::Type::Path(path) => path.path.require_ident().unwrap(),
         _ => panic!("Type must be an indent.")
     };
     let buf_vis = buf_info.vis.clone();
-
-    let codable_encode;
-    let codable_decode;
-    let len;
-    let mut buf_impl = Vec::new();
-
-    match item.fields.clone() {
-        syn::Fields::Unit => {
-            codable_encode = quote! {};
-            codable_decode = quote! {
-                Self
-            };
-            len = quote! { 0 };
-        }
-
-        syn::Fields::Named(fields) => {
-            codable_encode = {
-                let iter = fields.named.clone().into_iter().map(|field| {
-                    let ident = field.ident.unwrap();
-                    let ty = field.ty;
-                    quote! {
-                        <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(buf.0.const_index(cursor)));
-                        cursor += <#ty as #lib::Entry>::LEN;
-                    }
-                });
-                quote! {
-                    let mut cursor: usize = 0;
-                    #( #iter )*
-                }
-            };
-
-            codable_decode = {
-                let iter = fields.named.iter().map(|field| {
-                    let ident = field.ident.as_ref().unwrap();
-                    let ty = &field.ty;
-                    quote! {
-                        #ident: {
-                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(buf.0.const_index(cursor)));
-                            cursor += <#ty as #lib::Entry>::LEN;
-                            v
-                        }
-                    }
-                });
-                quote! {
-                    let mut cursor: usize = 0;
-                    Self {
-                        #( #iter ),*
-                    }
-                }
-            };
-
-            {
-                let mut cursor = quote! { 0 };
-                for field in fields.named.clone() {
-                    let ident = field.ident.unwrap();
-                    let ty = field.ty;
-                    let f_ident = syn::Ident::new(&format!("field_{ident}"), ident.span());
-                    buf_impl.push(quote! {
-                        pub fn #f_ident(self) -> #buf_ident<BV> {
-                            const START_INDEX: usize = #cursor;
-                            #buf_ident(unsafe { self.0.const_index(START_INDEX) })
-                        }
-                    });
-                    cursor = quote! {
-                        #cursor + <#ty as #lib::Entry>::LEN
-                    };
-                }
-                len = cursor;
-            }
-        },
-        syn::Fields::Unnamed(fields) => {
-            len = {
-                let iter = fields.unnamed.clone().into_iter().map(|field| {
-                    let ty = field.ty;
-                    quote! {
-                        <#ty as #lib::Entry>::SIZE
-                    }
-                });
-                quote! {
-                    #( #iter )+*
-                }
-            };
-
-            codable_encode = {
-                let iter = fields.unnamed.clone().into_iter().enumerate().map(|(idx, field)| {
-                    let ty = field.ty;
-                    let idx = syn::Index::from(idx);
-                    quote! {
-                        #lib::Entry::encode(&self.#idx, &mut bytes.index_to(cursor));
-                        cursor += <#ty as #lib::Entry>::SIZE;
-                    }
-                });
-
-                quote! {
-                    let mut cursor: usize = 0;
-                    #( #iter )*
-                }
-            };
-
-            codable_decode = {
-                let iter = fields.unnamed.into_iter().enumerate().map(|(_idx, field)| {
-                    let ty = field.ty;
-                    quote! {
-                        {
-                            let v = #lib::Entry::decode(&bytes.index_to(cursor));
-                            cursor += <#ty as #lib::Entry>::SIZE;
-                            v
-                        }
-                    }
-                });
-                quote! {
-                    let mut cursor: usize = 0;
-                    Self (
-                        #( #iter ),*
-                    )
-                }
-            }
-        }
-    }
+    let mut buf_generics = buf_info.generics;
+    let buf_generics_params = buf_generics.params;
+    let (_, buf_ty_generics, buf_where_clause) = buf_generics.split_for_impl();
+    // let buf_ty_generics_params = buf_ty_generics.
 
     quote! {
-        #item
+        #buf_vis struct #buf_ident<BV: #lib::entry::bytes::Variant, buf_generics_params>(#lib::entry::Bytes<BV, { #len }>, PhantomData) #buf_where_clause;
 
-        #buf_vis struct #buf_ident<BV: #lib::entry::bytes::Variant>(#lib::entry::Bytes<BV, { #len }>);
-
-        impl<BV: #lib::entry::bytes::Variant> #buf_ident<BV> {
-            #( #buf_impl )*
-        }
-
-        impl #lib::Entry for #item_ident {
+        impl #item_generics #lib::Entry for #item_ty {
             const LEN: usize = #len;
             type Buf<BV: #lib::entry::bytes::Variant> = #buf_ident<BV>;
 
@@ -171,15 +52,6 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
             }
             fn buf_swap(mut a: #lib::entry::BufMut<'_, Self>, mut b: #lib::entry::BufMut<'_, Self>) {
                 a.0.swap(&mut b.0)
-            }
-        }
-
-        impl #lib::entry::Codable for #item_ident {
-            fn encode(&self, buf: #lib::entry::BufMut<'_, Self>) {
-                #codable_encode
-            }
-            fn decode(buf: #lib::entry::BufConst<'_, Self>) -> Self {
-                #codable_decode
             }
         }
     }.into()
