@@ -26,6 +26,12 @@ pub fn derive_entry(input: TokenStream) -> TokenStream {
     entry::derive(item.rest, &item.path).into()
 }
 
+#[proc_macro]
+pub fn derive_entry_buf(input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as InputWithLibPath<entry::buf::Input>);
+    entry::buf::output(item.rest, &item.path).into()
+}
+
 struct MacroWithCratePath {
     input_path: syn::Path,
     output_name: syn::Ident,

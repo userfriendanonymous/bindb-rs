@@ -1,12 +1,9 @@
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{parse::Parse, spanned::Spanned};
 pub use input::{Item, Value as Input};
 
-// pub mod r#struct;
 pub mod input;
-// pub mod r#for;
 pub mod expand;
+pub mod buf;
 
 pub fn derive(input: Input, lib: &syn::Path) -> TokenStream {
     expand::output(input, lib)
