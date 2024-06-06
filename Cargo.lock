@@ -94,6 +94,7 @@ dependencies = [
  "fmmap",
  "macros",
  "memmap2",
+ "to_phantom",
 ]
 
 [[package]]
@@ -115,6 +116,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+ "to_phantom",
 ]
 
 [[package]]
@@ -279,6 +281,17 @@ version = "0.1.0"
 dependencies = [
  "fmmap",
  "memmap2",
+]
+
+[[package]]
+name = "to_phantom"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d1a5f35ab1d1b595b5cdb39e4dd358a8e2cd15ecf0d9df736e959381927e5de"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

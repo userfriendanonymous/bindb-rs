@@ -8,10 +8,12 @@ pub fn derive(item: syn::ItemStruct, meta: super::input::Meta, lib: syn::Path) -
 
     let buf_info = meta.buf;
 
+
     let buf_ident = match buf_info.ty.as_ref() {
-        syn::Type::Path(path) => path.path.require_ident().unwrap(),
+        syn::Type::Path(path) => path.path.require_ident().expect("Idk hmm"),
         _ => panic!("Type must be an indent.")
     };
+    panic!("{}", buf_ident.to_string());
     let buf_vis = buf_info.vis.clone();
 
     let codable_encode;

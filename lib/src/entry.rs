@@ -6,7 +6,6 @@ pub use id::Value as Id;
 pub mod bytes;
 pub mod id;
 
-#[macro_use]
 pub mod impls;
 
 pub type Buf<T: Instance, BV: bytes::Variant> = T::Buf<BV>;
@@ -22,16 +21,17 @@ pub fn buf_swap<T: Instance>(a: BufMut<'_, T>, b: BufMut<'_, T>) {
     T::buf_swap(a, b)
 }
 
-fn encode_to_owned<T: Codable>(value: &T) -> BufOwned<T> where [(); T::LEN]: {
-    let mut buf = T::buf(bytes::Owned::new([0; T::LEN]));
+fn encode_to_owned<T: Codable>(value: &T) -> BufOwned<T> {
+    let mut buf = T::buf(bytes::Owned::new(vec![0; T::len()].into_boxed_slice()));
     value.encode(T::buf_owned_as_mut(&mut buf));
     buf
 }
 
 pub trait Instance {
-    const LEN: usize;
+    fn len() -> usize;
+    // const LEN: usize;
     type Buf<BV: bytes::Variant>;
-    fn buf<BV: bytes::Variant>(bytes: Bytes<BV, { Self::LEN }>) -> Self::Buf<BV>;
+    fn buf<BV: bytes::Variant>(bytes: Bytes<BV>) -> Self::Buf<BV>;
     fn buf_rb_const<'a>(buf: &'a BufConst<'a, Self>) -> BufConst<'a, Self>;
     fn buf_rb_mut<'a>(buf: &'a mut BufMut<'a, Self>) -> BufMut<'a, Self>;
     fn buf_owned_as_const(buf: &BufOwned<Self>) -> BufConst<'_, Self>;
@@ -67,7 +67,7 @@ pub trait Codable: Instance {
     fn encode(&self, buf: BufMut<'_, Self>);
     fn decode(buf: BufConst<'_, Self>) -> Self;
 
-    fn encode_to_owned(&self) -> BufOwned<Self> where Self: Sized, [(); Self::LEN]: {
+    fn encode_to_owned(&self) -> BufOwned<Self> where Self: Sized {
         encode_to_owned(self)
     }
 }
@@ -78,7 +78,7 @@ pub trait Readable<T: Instance> {
     fn into_buf(self) -> T::Buf<Self::BV>;
 }
 
-impl<T: Codable> Readable<T> for &T where [(); T::LEN]: {
+impl<T: Codable> Readable<T> for &T {
     type BV = bytes::variant::Owned;
     fn write_to(self, buf: BufMut<'_, T>) {
         self.encode(buf)

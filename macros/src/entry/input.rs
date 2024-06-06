@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use syn::{parse::Parse, spanned::Spanned};
 
 pub struct Value {
-    pub items: BTreeMap<syn::Ident, Item>,
+    pub items: BTreeMap<String, Item>,
     pub impls: Vec<syn::ItemImpl>,
     pub macros: Vec<syn::ItemMacro>,
 }
@@ -17,22 +17,26 @@ impl Parse for Value {
         while !input.is_empty() {
             match input.parse()? {
                 syn::Item::Struct(value) => {
-                    items.insert(value.ident.clone(), Item::Struct(value));
+                    // panic!("{}", value.ident.clone().to_string());
+                    items.insert(value.ident.to_string(), Item::Struct(value));
                 }
                 syn::Item::Enum(value) => {
-                    items.insert(value.ident.clone(), Item::Enum(value));
+                    items.insert(value.ident.to_string(), Item::Enum(value));
                 }
                 syn::Item::Impl(value) => {
                     impls.push(value);
                 }
                 syn::Item::Macro(value) => {
                     macros.push(value);
-                },
-                value => return Err(syn::Error::new(value.span(), "Unexpected item."))
+                }
+                value => return Err(syn::Error::new(value.span(), "Unexpected item.")),
             }
         }
-
-        Ok(Self { items, impls, macros })
+        Ok(Self {
+            items,
+            impls,
+            macros,
+        })
 
         // let mut set_item = |span: proc_macro2::Span, value: Item| {
         //     if item.is_none() {
@@ -68,37 +72,37 @@ impl Parse for Value {
         //         },
         //         syn::Item::Impl(value) => {
 
-                //     let generics = value.generics;
-                    // let target = *value.self_ty;
-                //     let kind = match 
-                //         value.trait_.ok_or(syn::Error::new(value.span(), "Must have trait"))?
-                //             .1.require_ident().map_err(|x| x)?.to_string().as_str()
-                //     {
-                //         "Instance" => {
-                //             let mut len = None;
-                //             let mut buf = None;
-                //             for item in value.items {
-                //                 match item {
-                //                     syn::ImplItem::Const(value) => match value.ident.to_string().as_str() {
-                //                         "LEN" => len = Some(value),
-                //                     }
-                //                     syn::ImplItem::Type(value) => match value.ident.to_string().as_str() {
-                //                         "Buf" => buf = Some(value)
-                //                     },
-                //                     _ => return Err(syn::Error::new(item.span(), "Unexpected item.")),
-                //                 }
-                //             }
-                //             ImplKind::Instance { buf: buf.ok_or(syn::Error::new(value.span(), "Buf expected"))?, len }
-                //         }
-                //     };
-                //     impls.push(Impl {
-                //         generics,
-                //         target,
-                //         kind
-                //     });
-                // },
-                // other => return Err(syn::Error::new(other.span(), "Unexpected item.")),
-            // }
+        //     let generics = value.generics;
+        // let target = *value.self_ty;
+        //     let kind = match
+        //         value.trait_.ok_or(syn::Error::new(value.span(), "Must have trait"))?
+        //             .1.require_ident().map_err(|x| x)?.to_string().as_str()
+        //     {
+        //         "Instance" => {
+        //             let mut len = None;
+        //             let mut buf = None;
+        //             for item in value.items {
+        //                 match item {
+        //                     syn::ImplItem::Const(value) => match value.ident.to_string().as_str() {
+        //                         "LEN" => len = Some(value),
+        //                     }
+        //                     syn::ImplItem::Type(value) => match value.ident.to_string().as_str() {
+        //                         "Buf" => buf = Some(value)
+        //                     },
+        //                     _ => return Err(syn::Error::new(item.span(), "Unexpected item.")),
+        //                 }
+        //             }
+        //             ImplKind::Instance { buf: buf.ok_or(syn::Error::new(value.span(), "Buf expected"))?, len }
+        //         }
+        //     };
+        //     impls.push(Impl {
+        //         generics,
+        //         target,
+        //         kind
+        //     });
+        // },
+        // other => return Err(syn::Error::new(other.span(), "Unexpected item.")),
+        // }
         // }
 
         // let Some(item) = item else {
@@ -109,6 +113,7 @@ impl Parse for Value {
     }
 }
 
+#[derive(Clone)]
 pub enum Item {
     Enum(syn::ItemEnum),
     Struct(syn::ItemStruct),

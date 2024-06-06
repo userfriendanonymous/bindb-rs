@@ -1,9 +1,15 @@
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops::{Add, Sub}};
 
 // #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Value<T>(u64, PhantomData<T>);
+entry! {
+    pub struct Value<T>(u64, PhantomData<T>);
+    buf! { pub struct Buf<BV, T>(Value<T>, BV); }
 
-pub struct Buf<BV: super::bytes::Variant>(super::Bytes<BV, 8>);
+    impl<T> I for Value<T> {
+        type Buf<BV> = Buf<BV, T>;
+    }
+    impl<T> Codable for Value<T> {}
+}
 
 impl<T> Debug for Value<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -76,17 +82,17 @@ impl<T> Value<T> {
         *self + 1
     }
 
-    pub fn next(&mut self) -> Self {
-        let value = self.clone();
-        self.0 += 1;
-        value
-    }
+    // pub fn next(&mut self) -> Self {
+    //     let value = self.clone();
+    //     self.0 += 1;
+    //     value
+    // }
 
-    pub fn prev(&mut self) -> Self {
-        let value = self.clone();
-        self.0 -= 1;
-        value
-    }
+    // pub fn prev(&self) -> Self {
+    //     let value = self.clone();
+    //     self.0 -= 1;
+    //     value
+    // }
 }
 
 impl<T> Add<u64> for Value<T> {

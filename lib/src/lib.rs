@@ -6,6 +6,7 @@
 extern crate macros;
 
 macro_with_crate_path! { macros::derive_entry; entry }
+macro_with_crate_path! { macros::derive_entry_buf; entry_buf }
 // pub use lens::{Value as Lens, producer as lenser};
 // pub use codable::Instance as Codable;
 // pub use collection::Value as Collection;
@@ -21,7 +22,6 @@ pub use type_fn::Instance as TypeFn;
 // pub mod buf;
 pub mod collection;
 
-#[macro_use]
 pub mod entry;
 pub mod lens;
 // pub mod ref_variant;
@@ -226,18 +226,7 @@ mod utils;
 // //     }
 // // }
 
-entry! {
-    type Buf = EmptyBuf;
-    struct Empty;
-}
 
-entry! {
-    type Buf = CoolBuf;
-    struct Cool {
-        pub f: Empty,
-        pub d: Empty,
-    }
-}
 // codable! {
 //     type Lenser = ItemLenser;
 //     #[derive(Debug, Default)]

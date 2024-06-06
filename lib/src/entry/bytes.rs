@@ -8,26 +8,26 @@ mod private {
 
 pub mod variant;
 
-pub type Const<'a, const L: usize> = Value<variant::Const<'a>, L>;
-pub type Mut<'a, const L: usize> = Value<variant::Mut<'a>, L>;
-pub type Owned<const L: usize> = Value<variant::Owned, L>;
+pub type Const<'a> = Value<variant::Const<'a>>;
+pub type Mut<'a> = Value<variant::Mut<'a>>;
+pub type Owned = Value<variant::Owned>;
 
-pub struct Value<V: Variant, const L: usize>(V::Inner<L>);
+pub struct Value<V: Variant>(V::Inner);
 
-impl<V: Variant, const L: usize> Value<V, L> {
-    pub(crate) fn new(value: V::Inner<L>) -> Self {
+impl<V: Variant> Value<V> {
+    pub(crate) fn new(value: V::Inner) -> Self {
         Self(value)
     }
 
-    pub unsafe fn detach<'b>(self) -> Value<V::Ref<'b>, L>
+    pub unsafe fn detach<'b>(self) -> Value<V::Ref<'b>>
     where
         V: variant::Ref,
     {
         Value(V::detach(self.0))
     }
 
-    pub unsafe fn const_index<const OL: usize>(self, at: usize) -> Value<V, OL> {
-        Value(V::const_index(self.0, at))
+    pub unsafe fn index_range(self, at: usize, len: usize) -> Value<V> {
+        Value(V::index_range(self.0, at, len))
     }
 
     // fn into_owned(self) -> Value<{ O::LEN }, variant::Owned> {
@@ -35,42 +35,42 @@ impl<V: Variant, const L: usize> Value<V, L> {
     // }
 }
 
-impl<'a, const L: usize> Value<variant::Const<'a>, L> {
+impl<'a> Value<variant::Const<'a>> {
     pub fn rb_const(&self) -> Self {
         Self::new(self.slice())
     }
 }
 
-impl<'a, const L: usize> Value<variant::Mut<'a>, L> {
+impl<'a> Value<variant::Mut<'a>> {
     pub fn rb_mut(&mut self) -> Self {
         Self::new(self.slice_mut())
     }
 }
 
-impl<V: variant::AsConst, const L: usize> Value<V, L> {
+impl<V: variant::AsConst> Value<V> {
     pub fn slice(&self) -> &[u8] {
         V::as_const(&self.0)
     }
 
-    pub fn as_array(&self) -> &[u8; L] {
-        unsafe { slice_to_array(self.slice()) }
+    pub unsafe fn array<const L: usize>(&self) -> &[u8; L] {
+        slice_to_array(self.slice())
     }
 
-    pub fn as_const(&self) -> Const<'_, L> {
+    pub fn as_const(&self) -> Const<'_> {
         Value(self.slice())
     }
 }
 
-impl<V: variant::AsMut, const L: usize> Value<V, L> {
+impl<V: variant::AsMut> Value<V> {
     pub fn slice_mut(&mut self) -> &mut [u8] {
         V::as_mut(&mut self.0)
     }
 
-    pub fn as_array_mut(&self) -> &mut [u8; L] {
-        unsafe { slice_to_array_mut(self.slice_mut()) }
+    pub unsafe fn array_mut<const L: usize>(&self) -> &mut [u8; L] {
+        slice_to_array_mut(self.slice_mut())
     }
 
-    pub fn as_mut(&mut self) -> Mut<'_, L> {
+    pub fn as_mut(&mut self) -> Mut<'_> {
         Value(self.slice_mut())
     }
 
@@ -86,11 +86,15 @@ impl<V: variant::AsMut, const L: usize> Value<V, L> {
         self.slice_mut().copy_within(src, dest)
     }
 
-    pub fn copy_from<SO: variant::AsConst>(&mut self, src: &Value<SO, L>) {
+    pub fn copy_from<SO: variant::AsConst>(&mut self, src: &Value<SO>) {
         self.slice_mut().copy_from_slice(src.slice())
     }
 
-    pub fn swap<SO: variant::AsMut>(&mut self, with: &mut Value<SO, L>) {
+    pub fn copy_from_slice(&mut self, slice: &[u8]) {
+        self.slice_mut().copy_from_slice(slice);
+    }
+
+    pub fn swap<SO: variant::AsMut>(&mut self, with: &mut Value<SO>) {
         self.slice_mut().swap_with_slice(with.slice_mut())
     }
 }

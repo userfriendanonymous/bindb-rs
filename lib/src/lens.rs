@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use crate::{entry, Entry};
+use crate::{entry::{self}, Entry};
 
 pub const fn identity<E>() -> Identity<E> {
     Identity::SELF

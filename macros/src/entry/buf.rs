@@ -2,6 +2,7 @@
 use quote::quote;
 use proc_macro2::TokenStream;
 use syn::spanned::Spanned;
+use to_phantom::ToPhantom;
 
 pub struct Input {
     vis: syn::Visibility,
@@ -44,15 +45,24 @@ impl syn::parse::Parse for Input {
 
 // buf! { struct OptionBuf<BV, T>(Option, BV) where T: Clone; }
 
-pub fn output(input: Input, lib: &syn::Path) -> TokenStream {
+pub fn output(mut input: Input, lib: &syn::Path) -> TokenStream {
+    let bv_trait_bound: syn::TraitBound = syn::parse2(quote! { #lib::entry::bytes::Variant }).unwrap();
+
     let vis = input.vis;
     let ident = input.ident;
     let bv_ident = input.bv_ident;
     let entry_ty = input.entry_ty;
 
-    let (generics_params, _, where_clause) = input.generics.split_for_impl();
+    input.generics.type_params_mut().find(|p| p.ident == bv_ident).unwrap()
+        .bounds.push(syn::TypeParamBound::Trait(bv_trait_bound));
 
+    let (generics_params, _, where_clause) = input.generics.split_for_impl();
+    let phantom = input.generics.to_phantom();
+    
     quote! {
-        #vis struct #ident #generics_params (#lib::entry::Bytes<#bv_ident, <#entry_ty as #lib::Entry>::LEN>) #where_clause;
+        #vis struct #ident #generics_params (
+            #lib::entry::Bytes<#bv_ident>,
+            #phantom
+        ) #where_clause;
     }
 }

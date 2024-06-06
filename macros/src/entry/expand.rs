@@ -15,7 +15,12 @@ pub fn output(input: Input, lib: &syn::Path) -> TokenStream {
     }
 
     for value in input.items.values() {
-        let more_output = item::output(value, lib);
+        let more_output = item::output(value.clone(), lib);
+        output = quote! { #output #more_output };
+    }
+
+    for value in input.macros {
+        let more_output = r#macro::output(value, &input.items, lib);
         output = quote! { #output #more_output };
     }
 

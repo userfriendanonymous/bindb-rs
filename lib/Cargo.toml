@@ -14,3 +14,4 @@ extend = "1.2.0"
 fmmap = "0.3.3"
 memmap2 = "0.9.4"
 macros = { version = "0.1.0", path = "../macros" }
+to_phantom = "0.1.0"
