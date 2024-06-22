@@ -42,9 +42,12 @@ pub fn output(
                     let ident = field.ident.as_ref().unwrap();
                     let ty = &field.ty;
                     quote! {
-                        let len = <#ty as #lib::Entry>::len();
-                        <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(unsafe { buf.0.index_range(cursor, len) }));
-                        cursor += len;
+                        {
+                            let len = <#ty as #lib::Entry>::len();
+                            let b = (&mut buf.0).rb_mut();
+                            <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
+                            cursor += len;
+                        }
                     }
                 });
                 encode_fn = quote! {
@@ -58,7 +61,8 @@ pub fn output(
                     quote! {
                         #ident: {
                             let len = <#ty as #lib::Entry>::len();
-                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { buf.0.index_range(cursor, len) }));
+                            let b = (&buf.0).rb_const();
+                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
                             cursor += len;
                             v
                         }
@@ -77,9 +81,12 @@ pub fn output(
                     let index = syn::Index::from(idx);
                     let ty = &field.ty;
                     quote! {
-                        let len = <#ty as #lib::Entry>::len();
-                        <#ty as #lib::entry::Codable>::encode(&self.#index, <#ty as #lib::Entry>::buf(unsafe { buf.0.index_range(cursor, len) }));
-                        cursor += len;
+                        {
+                            let len = <#ty as #lib::Entry>::len();
+                            let b = (&mut buf.0).rb_mut();
+                            <#ty as #lib::entry::Codable>::encode(&self.#index, <#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
+                            cursor += len;
+                        }
                     }
                 });
                 encode_fn = quote! {
@@ -92,7 +99,8 @@ pub fn output(
                     quote! {
                         {
                             let len = <#ty as #lib::Entry>::len();
-                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { buf.0.index_range(cursor, len) }));
+                            let b = (&buf.0).rb_const();
+                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
                             cursor += len;
                             v
                         }
@@ -111,10 +119,10 @@ pub fn output(
 
     quote! {
         impl #impl_generics #lib::entry::Codable for #self_ty #where_clause {
-            fn encode(&self, buf: #lib::entry::BufMut<'_, Self>) {
+            fn encode<'a>(&'a self, mut buf: #lib::entry::BufMut<'a, Self>) {
                 #encode_fn
             }
-            fn decode(buf: #lib::entry::BufConst<'_, Self>) -> Self {
+            fn decode<'a>(buf: #lib::entry::BufConst<'a, Self>) -> Self {
                 #decode_fn
             }
         }

@@ -18,7 +18,6 @@ pub use entry::Instance as Entry;
 use macros::macro_with_crate_path;
 // pub use ownership::Instance as Ownership;
 pub use lens::Instance as Lens;
-pub use type_fn::Instance as TypeFn;
 // pub mod buf;
 pub mod collection;
 
@@ -27,7 +26,6 @@ pub mod lens;
 // pub mod ref_variant;
 // pub mod ownership;
 mod private;
-pub mod type_fn;
 mod utils;
 
 // fn benchmark<R>(msg: &'static str, f: impl FnOnce() -> R) -> R {

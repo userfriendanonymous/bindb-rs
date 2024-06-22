@@ -13,13 +13,13 @@ pub trait Ref: Instance {
     unsafe fn detach<'a>(value: Self::Inner) -> Inner<Self::Ref<'a>>;
 }
 
-pub trait AsConst: Instance {
-    fn as_const<'a>(value: &'a Self::Inner) -> Inner<Const<'a>>;
-}
+// pub trait AsConst: Instance {
+//     fn as_const<'a>(value: &'a Self::Inner) -> Inner<Const<'a>>;
+// }
 
-pub trait AsMut: AsConst {
-    fn as_mut<'a>(value: &'a mut Self::Inner) -> Inner<Mut<'a>>;
-}
+// pub trait AsMut: AsConst {
+//     fn as_mut<'a, 'b>(value: &'b mut Self::Inner) -> Inner<Mut<'a>>;
+// }
 
 pub struct Const<'a>(PhantomData<&'a ()>);
 
@@ -38,11 +38,11 @@ impl<'c> Ref for Const<'c> {
     }
 }
 
-impl<'b> AsConst for Const<'b> {
-    fn as_const<'a>(value: &'a Self::Inner) -> Inner<Const<'a>> {
-        value
-    }
-}
+// impl<'c> AsConst for Const<'c> {
+//     fn as_const<'a, 'b>(value: &'b Self::Inner) -> Inner<Const<'a>> {
+//         value
+//     }
+// }
 
 pub struct Mut<'a>(PhantomData<&'a ()>);
 
@@ -60,17 +60,17 @@ impl<'b> Ref for Mut<'b> {
     }
 }
 
-impl<'b> AsConst for Mut<'b> {
-    fn as_const<'a>(value: &'a Self::Inner) -> Inner<Const<'a>> {
-        value
-    }
-}
+// impl<'c> AsConst for Mut<'c> {
+//     fn as_const<'a, 'b>(value: &'b Self::Inner) -> Inner<Const<'a>> {
+//         value
+//     }
+// }
 
-impl<'b> AsMut for Mut<'b> {
-    fn as_mut<'a>(value: &'a mut Self::Inner) -> Inner<Mut<'a>> {
-        value
-    }
-}
+// impl<'c> AsMut for Mut<'c> {
+//     fn as_mut<'a, 'b>(value: &'b mut Self::Inner) -> Inner<Mut<'a>> {
+//         value
+//     }
+// }
 
 pub struct Owned;
 
@@ -82,14 +82,14 @@ impl Instance for Owned {
     }
 }
 
-impl AsConst for Owned {
-    fn as_const<'a>(value: &'a Self::Inner) -> Inner<Const<'a>> {
-        value
-    }
-}
+// impl AsConst for Owned {
+//     fn as_const<'a, 'b>(value: &'b Self::Inner) -> Inner<Const<'a>> {
+//         value
+//     }
+// }
 
-impl AsMut for Owned {
-    fn as_mut<'a>(value: &'a mut Self::Inner) -> Inner<Mut<'a>> {
-        value
-    }
-}
+// impl AsMut for Owned {
+//     fn as_mut<'a, 'b>(value: &'b mut Self::Inner) -> Inner<Mut<'a>> {
+//         value
+//     }
+// }

@@ -30,7 +30,7 @@ pub enum RemoveLastError {
 #[derive(Debug)]
 pub enum SwapRemoveError {
     RemoveLastError(RemoveLastError),
-    Fmmap(fmmap::error::Error),
+    //Fmmap(fmmap::error::Error),
 }
 
 #[derive(Debug)]
@@ -100,16 +100,16 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     fn header_buf(&self) -> entry::BufConst<'_, Header<E, M>> {
-        let bytes = entry::bytes::Const::new(self.file_map.get_unchecked(0 .. Header::<E, M>::len()));
+        let bytes = entry::bytes::Const::new(unsafe { self.file_map.get_unchecked(0 .. Header::<E, M>::len()) });
         Header::buf(bytes)
     }
 
-    fn header_buf_mut(&self) -> entry::BufMut<'_, Header<E, M>> {
-        let bytes = entry::bytes::Mut::new(self.file_map.get_unchecked_mut(0 .. Header::<E, M>::len()));
+    fn header_buf_mut(&mut self) -> entry::BufMut<'_, Header<E, M>> {
+        let bytes = entry::bytes::Mut::new(unsafe { self.file_map.get_unchecked_mut(0 .. Header::<E, M>::len()) });
         Header::buf(bytes)
     }
 
-    fn set_next_entry_id(&self, value: entry::Id<E>) {
+    fn set_next_entry_id(&mut self, value: entry::Id<E>) {
         self.header.next_entry_id = value;
         self.next_entry_id().encode(self.header_buf_mut().next_entry_id());
     }
@@ -121,7 +121,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         E::buf(bytes)
     }
 
-    pub unsafe fn buf_unchecked_mut(&self, id: entry::Id<E>) -> entry::BufMut<'_, E> {
+    pub unsafe fn buf_unchecked_mut(&mut self, id: entry::Id<E>) -> entry::BufMut<'_, E> {
         let offset = self.entry_offset(id);
         let bytes = entry::Bytes::new(self.file_map.get_unchecked_mut(offset..offset + E::len()));
         E::buf(bytes)
@@ -144,7 +144,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
     // endregion: Core functions.
 
-    pub fn add(&mut self, entry: &impl entry::Readable<E>) -> Result<entry::Id<E>, AddError> {
+    pub fn add(&mut self, entry: impl entry::Readable<E>) -> Result<entry::Id<E>, AddError> {
         type E = AddError;
         let id = self.next_entry_id();
         if self.margin == 0 {
@@ -178,14 +178,15 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     // Convenience functions.
-    pub fn find<L: Lens<In = E>>(
-        &self,
+    pub fn find<'a, L: Lens<In = E> + Clone>(
+        &'a self,
         lens: L,
         // ids: impl Iterator<Item = entry::Id<Entry>>,
         f: impl Fn(entry::BufConst<'_, L::Out>) -> bool,
-    ) -> Result<Option<(entry::Id<E>, entry::BufConst<'_, L::Out>)>, GetError> {
+    ) -> Result<Option<(entry::Id<E>, entry::BufConst<'a, L::Out>)>, GetError>
+    where <L as lens::Instance>::Out: 'a {
         for id in self.all_ids() {
-            let buf = lens.apply(unsafe { self.buf_unchecked(id) });
+            let buf = lens.clone().apply(unsafe { self.buf_unchecked(id) });
             if f(L::Out::buf_rb_const(&buf)) {
                 return Ok(Some((id, buf)));
             }
@@ -200,7 +201,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         src_id: entry::Id<E>,
         dst_id: entry::Id<E>,
     ) {
-        let mut dst = unsafe { entry::buf_detach(lens.clone().apply(self.buf_unchecked_mut(dst_id))) };
+        let mut dst = unsafe { entry::buf_detach::<_, L::Out>(lens.clone().apply(self.buf_unchecked_mut(dst_id))) };
         let src = lens.apply(self.buf_unchecked(src_id));
         <L::Out as Entry>::buf_copy_to(src, dst);
     }
@@ -212,9 +213,9 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         b_id: entry::Id<E>,
     ) {
         if a_id != b_id {
-            let mut a = unsafe { entry::buf_detach(lens.apply(self.buf_unchecked_mut(a_id))) };
+            let mut a = unsafe { entry::buf_detach::<_, L::Out>(lens.clone().apply(self.buf_unchecked_mut(a_id))) };
             let mut b = lens.apply(unsafe { self.buf_unchecked_mut(b_id) });
-            entry::buf_swap(a, b);
+            entry::buf_swap::<L::Out>(a, b);
         }
     }
 
@@ -241,7 +242,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     pub fn set<L: Lens<In = E>>(
-        &self,
+        &mut self,
         lens: L,
         id: entry::Id<E>,
         value: impl entry::Readable<L::Out>,
@@ -250,14 +251,14 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         L::Out: entry::Codable,
     {
         if let Some(mut buf) = self.buf_mut(id) {
-            value.write_to(buf);
+            value.write_to(lens.apply(buf));
             true
         } else {
             false
         }
     }
 
-    pub fn linear_search<L: Lens<In = E>>(&self, lens: L, value: impl entry::Readable<L::Out>) {
-        let buf = value.into_buf();
-    }
+    // fn linear_search<L: Lens<In = E>>(&self, lens: L, value: impl entry::Readable<L::Out>) {
+    //     let buf = value.into_buf();
+    // }
 }

@@ -44,7 +44,7 @@ pub fn item_fields_data(item: &Item, lib: &syn::Path) -> ItemFieldsData {
                                             lens_fns = quote! {
                                                 #lens_fns
                                                 #vis fn #fn_ident<BV: #lib::entry::bytes::Variant>(buf: #lib::entry::Buf<Self, BV>) -> #lib::entry::Buf<#ty, BV> {
-                                                    <#ty as #lib::Entry>::buf(buf.0.index_range(#len, <#ty as #lib::Entry>::len()))
+                                                    <#ty as #lib::Entry>::buf(unsafe { buf.0.index_range(#len, <#ty as #lib::Entry>::len()) })
                                                 }
                                             }
                                         },

@@ -30,7 +30,7 @@ instance! {
 }
 
 impl Codable for u32 {
-    fn encode(&self, buf: super::BufMut<'_, Self>) {
+    fn encode(&self, mut buf: super::BufMut<'_, Self>) {
         buf.0.copy_from_slice(&self.to_be_bytes());
     }
 
@@ -50,7 +50,7 @@ instance! {
 }
 
 impl Codable for u64 {
-    fn encode(&self, buf: super::BufMut<'_, Self>) {
+    fn encode(&self, mut buf: super::BufMut<'_, Self>) {
         buf.0.copy_from_slice(&self.to_be_bytes());
     }
 
@@ -60,12 +60,14 @@ impl Codable for u64 {
 }
 
 instance! {
+    #[derive(Clone, Debug)]
     struct OptionLike<T: super::Instance> {
         #[lens(pub field_idk)]
         idk: T,
         #[lens(pub field_id)]
         id: u32,
     }
+    
     buf! { pub struct OptionLikeBuf<BV, T: super::Instance>(OptionLike<T>, BV); }
 
     impl<T: super::Instance> I for OptionLike<T> {
@@ -85,7 +87,7 @@ instance! {
 }
 
 
-pub fn idk() {
+fn idk() {
     type Idk = <OptionLike::<u32> as crate::entry::Instance>::Buf<crate::entry::bytes::variant::Const<'static>>;
     OptionLike::<u32>::field_idk::<crate::entry::bytes::variant::Const<'static>>(todo!());
 }

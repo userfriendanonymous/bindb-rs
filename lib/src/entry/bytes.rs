@@ -12,6 +12,7 @@ pub type Const<'a> = Value<variant::Const<'a>>;
 pub type Mut<'a> = Value<variant::Mut<'a>>;
 pub type Owned = Value<variant::Owned>;
 
+#[derive(Clone)]
 pub struct Value<V: Variant>(V::Inner);
 
 impl<V: Variant> Value<V> {
@@ -35,43 +36,35 @@ impl<V: Variant> Value<V> {
     // }
 }
 
-impl<'a> Value<variant::Const<'a>> {
-    pub fn rb_const(&self) -> Self {
-        Self::new(self.slice())
+impl<'a> Const<'a> {
+    pub fn rb_const<'b>(&'b self) -> Const<'b> {
+        Self::new(&*self.0)
     }
 }
 
-impl<'a> Value<variant::Mut<'a>> {
-    pub fn rb_mut(&mut self) -> Self {
-        Self::new(self.slice_mut())
+impl<'a> Mut<'a> {
+    pub fn rb_mut<'b>(&'b mut self) -> Mut<'b> where 'a: 'b {
+        Self::new(&mut *self.0)
     }
 }
 
-impl<V: variant::AsConst> Value<V> {
+impl<'a> Const<'a> {
     pub fn slice(&self) -> &[u8] {
-        V::as_const(&self.0)
+        self.0
     }
 
     pub unsafe fn array<const L: usize>(&self) -> &[u8; L] {
         slice_to_array(self.slice())
     }
-
-    pub fn as_const(&self) -> Const<'_> {
-        Value(self.slice())
-    }
 }
 
-impl<V: variant::AsMut> Value<V> {
+impl<'a> Mut<'a> {
     pub fn slice_mut(&mut self) -> &mut [u8] {
-        V::as_mut(&mut self.0)
+        self.0
     }
 
-    pub unsafe fn array_mut<const L: usize>(&self) -> &mut [u8; L] {
+    pub unsafe fn array_mut<const L: usize>(&mut self) -> &mut [u8; L] {
         slice_to_array_mut(self.slice_mut())
-    }
-
-    pub fn as_mut(&mut self) -> Mut<'_> {
-        Value(self.slice_mut())
     }
 
     pub fn fill(&mut self, value: u8) {
@@ -86,7 +79,7 @@ impl<V: variant::AsMut> Value<V> {
         self.slice_mut().copy_within(src, dest)
     }
 
-    pub fn copy_from<SO: variant::AsConst>(&mut self, src: &Value<SO>) {
+    pub fn copy_from(&mut self, src: &Const<'_>) {
         self.slice_mut().copy_from_slice(src.slice())
     }
 
@@ -94,7 +87,7 @@ impl<V: variant::AsMut> Value<V> {
         self.slice_mut().copy_from_slice(slice);
     }
 
-    pub fn swap<SO: variant::AsMut>(&mut self, with: &mut Value<SO>) {
+    pub fn swap(&mut self, with: &mut Mut<'_>) {
         self.slice_mut().swap_with_slice(with.slice_mut())
     }
 }

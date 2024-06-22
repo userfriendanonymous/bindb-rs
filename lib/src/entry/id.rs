@@ -119,7 +119,9 @@ impl<T> Iterator for Range<T> {
         if self.0 >= self.1 {
             None
         } else {
-            Some(self.0.next())
+            let value = self.0.clone();
+            self.0.0 += 1;
+            Some(value)
         }
     }
 }

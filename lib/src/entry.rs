@@ -64,8 +64,8 @@ pub trait BufOrd: Instance {
 // }
 
 pub trait Codable: Instance {
-    fn encode(&self, buf: BufMut<'_, Self>);
-    fn decode(buf: BufConst<'_, Self>) -> Self;
+    fn encode<'a>(&'a self, buf: BufMut<'a, Self>);
+    fn decode<'a>(buf: BufConst<'a, Self>) -> Self;
 
     fn encode_to_owned(&self) -> BufOwned<Self> where Self: Sized {
         encode_to_owned(self)
@@ -73,18 +73,18 @@ pub trait Codable: Instance {
 }
 
 pub trait Readable<T: Instance> {
-    type BV: bytes::variant::AsConst;
+    // type BV: bytes::variant::AsConst;
     fn write_to(self, buf: BufMut<'_, T>);
-    fn into_buf(self) -> T::Buf<Self::BV>;
+    // fn into_buf(self) -> T::Buf<Self::BV>;
 }
 
 impl<T: Codable> Readable<T> for &T {
-    type BV = bytes::variant::Owned;
+    // type BV = bytes::variant::Owned;
     fn write_to(self, buf: BufMut<'_, T>) {
         self.encode(buf)
     }
 
-    fn into_buf(self) -> T::Buf<Self::BV> {
-        self.encode_to_owned()
-    }
+    // fn into_buf(self) -> T::Buf<Self::BV> {
+    //     self.encode_to_owned()
+    // }
 }
