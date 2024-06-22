@@ -1,95 +1,80 @@
 use std::marker::PhantomData;
 
-pub type Inner<T: Instance> = T::Inner;
+pub type Data<T: Instance> = T::Data;
 
 pub trait Instance {
-    type Inner;
-    unsafe fn index_range(inner: Self::Inner, at: usize, len: usize) -> Self::Inner;
+    type Data;
+    unsafe fn index_range(inner: Self::Data, at: usize, len: usize) -> Self::Data;
 }
 
-pub trait Ref: Instance {
-    type Ref<'a>: Instance;
+// pub trait Ref: Instance {
+//     type Ref: Instance;
 
-    unsafe fn detach<'a>(value: Self::Inner) -> Inner<Self::Ref<'a>>;
+//     unsafe fn detach<'a>(value: Self::Inner) -> Inner<Self::Ref<'a>>;
+// }
+
+pub trait AsConst: Instance {
+    fn as_const(data: &Self::Data) -> Data<Const>;
 }
 
-// pub trait AsConst: Instance {
-//     fn as_const<'a>(value: &'a Self::Inner) -> Inner<Const<'a>>;
-// }
+pub trait AsMut: AsConst {
+    fn as_mut(data: &mut Self::Data) -> Data<Mut>;
+}
 
-// pub trait AsMut: AsConst {
-//     fn as_mut<'a, 'b>(value: &'b mut Self::Inner) -> Inner<Mut<'a>>;
-// }
+pub struct Const;
 
-pub struct Const<'a>(PhantomData<&'a ()>);
-
-impl<'a> Instance for Const<'a> {
-    type Inner = &'a [u8];
-    unsafe fn index_range(inner: Self::Inner, at: usize, len: usize) -> Self::Inner {
+impl Instance for Const {
+    type Data = *const [u8];
+    unsafe fn index_range(inner: Self::Data, at: usize, len: usize) -> Self::Data {
         inner.get_unchecked(at .. at + len)
     }
 }
 
-impl<'c> Ref for Const<'c> {
-    type Ref<'b> = Const<'b>;
-
-    unsafe fn detach<'a>(value: Self::Inner) -> Inner<Self::Ref<'a>> {
-        &*(value as *const _)
+impl AsConst for Const {
+    fn as_const(data: &Self::Data) -> Data<Const> {
+        data
     }
 }
 
-// impl<'c> AsConst for Const<'c> {
-//     fn as_const<'a, 'b>(value: &'b Self::Inner) -> Inner<Const<'a>> {
-//         value
-//     }
-// }
+pub struct Mut;
 
-pub struct Mut<'a>(PhantomData<&'a ()>);
-
-impl<'a> Instance for Mut<'a> {
-    type Inner = &'a mut [u8];
-    unsafe fn index_range(inner: Self::Inner, at: usize, len: usize) -> Self::Inner {
+impl Instance for Mut {
+    type Data = *mut [u8];
+    unsafe fn index_range(inner: Self::Data, at: usize, len: usize) -> Self::Data {
         inner.get_unchecked_mut(at .. at + len)
     }
 }
 
-impl<'b> Ref for Mut<'b> {
-    type Ref<'a> = Mut<'a>;
-    unsafe fn detach<'a>(value: Self::Inner) -> Inner<Self::Ref<'a>> {
-        &mut *(value as *mut _)
+impl AsConst for Mut {
+    fn as_const(data: &Self::Data) -> Data<Const> {
+        *data as *const _
     }
 }
 
-// impl<'c> AsConst for Mut<'c> {
-//     fn as_const<'a, 'b>(value: &'b Self::Inner) -> Inner<Const<'a>> {
-//         value
-//     }
-// }
-
-// impl<'c> AsMut for Mut<'c> {
-//     fn as_mut<'a, 'b>(value: &'b mut Self::Inner) -> Inner<Mut<'a>> {
-//         value
-//     }
-// }
+impl AsMut for Mut {
+    fn as_mut(data: &mut Self::Data) -> Data<Mut> {
+        data
+    }
+}
 
 pub struct Owned;
 
 impl Instance for Owned {
-    type Inner = Box<[u8]>;
+    type Data = Box<[u8]>;
 
-    unsafe fn index_range(inner: Self::Inner, at: usize, len: usize) -> Self::Inner {
+    unsafe fn index_range(inner: Self::Data, at: usize, len: usize) -> Self::Data {
         inner.get_unchecked(at .. at + len).into()
     }
 }
 
-// impl AsConst for Owned {
-//     fn as_const<'a, 'b>(value: &'b Self::Inner) -> Inner<Const<'a>> {
-//         value
-//     }
-// }
+impl AsConst for Owned {
+    fn as_const(data: &Self::Data) -> Data<Const> {
+        &*data as *const _
+    }
+}
 
-// impl AsMut for Owned {
-//     fn as_mut<'a, 'b>(value: &'b mut Self::Inner) -> Inner<Mut<'a>> {
-//         value
-//     }
-// }
+impl AsMut for Owned {
+    fn as_mut(data: &mut Self::Data) -> Data<Mut> {
+        &mut *data as *mut _
+    }
+}
