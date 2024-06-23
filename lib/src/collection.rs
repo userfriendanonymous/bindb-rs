@@ -1,10 +1,9 @@
 use crate::{
-    entry::{self, Readable, Codable as _}, lens,
+    entry::{self, BufInstanceMut, Codable as _, Readable as _}, lens,
     utils::{slice_to_array, slice_to_array_mut},
     Entry, Lens,
 };
 use std::{fs::File, path::Path};
-// use super::{entry, buf, Codable, Lens, AsBuf};
 use memmap2::{MmapAsRawDesc, MmapMut, MmapOptions};
 pub use header::Value as Header;
 
@@ -17,13 +16,11 @@ pub enum GetError {
 
 #[derive(Debug)]
 pub enum AddError {
-    Fmmap(fmmap::error::Error),
     Io(std::io::Error),
 }
 
 #[derive(Debug)]
 pub enum RemoveLastError {
-    Fmmap(fmmap::error::Error),
     Io(std::io::Error),
 }
 
@@ -35,7 +32,6 @@ pub enum SwapRemoveError {
 
 #[derive(Debug)]
 pub enum NewError {
-    Fmmap(fmmap::error::Error),
     Io(std::io::Error),
 }
 
@@ -55,7 +51,7 @@ pub struct Value<E, M: Entry> {
 impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     pub unsafe fn create(file: File, meta: M) -> Result<Self, NewError> {
         type E = NewError;
-        file.set_len(8).map_err(E::Io)?;
+        file.set_len(Header::<E, M>::LEN as u64).map_err(E::Io)?;
         let mut file_map = MmapMut::map_mut(&file).map_err(E::Io)?;
         
         Ok(Self {
@@ -73,8 +69,9 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     pub unsafe fn open(file: File) -> Result<Self, OpenError> {
         type E = OpenError;
         let file_map = MmapMut::map_mut(&file).map_err(E::Io)?;
-        let bytes = entry::bytes::Const::new(file_map.get_unchecked(0 .. Header::<E, M>::len()));
-        let header = Header::decode(Header::buf(bytes));
+        let header_len = Header::<E, M>::LEN;
+        let ptr = entry::ptr::Const::new(file_map.get_unchecked(0 .. header_len).as_ptr(), header_len);
+        let header = Header::decode(Header::buf(ptr));
         Ok(Self {
             header,
             margin: 0,
@@ -89,7 +86,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     fn entry_offset(&self, id: entry::Id<E>) -> usize {
-        Header::<E, M>::len() + E::len() * id.as_usize()
+        Header::<E, M>::LEN + E::LEN * id.as_usize()
     }
 
     pub fn last_entry_id(&self) -> Option<entry::Id<E>> {
@@ -99,13 +96,15 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         }
     }
 
-    fn header_buf(&self) -> entry::BufConst<'_, Header<E, M>> {
-        let bytes = entry::bytes::Const::new(unsafe { self.file_map.get_unchecked(0 .. Header::<E, M>::len()) });
-        Header::buf(bytes)
+    fn header_buf(&self) -> entry::BufConst<Header<E, M>> {
+        let len = Header::<E, M>::LEN;
+        let ptr = unsafe { entry::ptr::Const::new(self.file_map.get_unchecked(0 .. len), len) };
+        Header::buf(ptr)
     }
 
-    fn header_buf_mut(&mut self) -> entry::BufMut<'_, Header<E, M>> {
-        let bytes = entry::bytes::Mut::new(unsafe { self.file_map.get_unchecked_mut(0 .. Header::<E, M>::len()) });
+    fn header_buf_mut(&mut self) -> entry::BufMut<Header<E, M>> {
+        let len = Header::<E, M>::LEN;
+        let ptr = unsafe { entry::ptr::Mut::new(self.file_map.get_unchecked_mut(0 .. len), len) };
         Header::buf(bytes)
     }
 
@@ -115,19 +114,20 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     // region: Core functions.
-    pub unsafe fn buf_unchecked(&self, id: entry::Id<E>) -> entry::BufConst<'_, E> {
+    // Doesn't check if ID is valid.
+    pub unsafe fn buf_unchecked(&self, id: entry::Id<E>) -> entry::BufConst<E> {
         let offset = self.entry_offset(id);
-        let bytes = entry::Bytes::new(self.file_map.get_unchecked(offset..offset + E::len()));
-        E::buf(bytes)
+        let ptr = entry::ptr::Const::new(self.file_map.get_unchecked(offset .. offset + E::LEN).as_ptr(), E::LEN);
+        E::buf(ptr)
     }
 
-    pub unsafe fn buf_unchecked_mut(&mut self, id: entry::Id<E>) -> entry::BufMut<'_, E> {
+    pub unsafe fn buf_unchecked_mut(&mut self, id: entry::Id<E>) -> entry::BufMut<E> {
         let offset = self.entry_offset(id);
-        let bytes = entry::Bytes::new(self.file_map.get_unchecked_mut(offset..offset + E::len()));
-        E::buf(bytes)
+        let ptr = entry::ptr::Mut::new(self.file_map.get_unchecked_mut(offset .. offset + E::LEN).as_ptr(), E::LEN);
+        E::buf(ptr)
     }
 
-    pub fn buf(&self, id: entry::Id<E>) -> Option<entry::BufConst<'_, E>> {
+    pub fn buf(&self, id: entry::Id<E>) -> Option<entry::BufConst<E>> {
         if self.next_entry_id() > id {
             Some(unsafe { self.buf_unchecked(id) })
         } else {
@@ -135,7 +135,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         }
     }
 
-    pub fn buf_mut(&mut self, id: entry::Id<E>) -> Option<entry::BufMut<'_, E>> {
+    pub fn buf_mut(&mut self, id: entry::Id<E>) -> Option<entry::BufMut<E>> {
         if self.next_entry_id() > id {
             Some(unsafe { self.buf_unchecked_mut(id) })
         } else {
@@ -178,16 +178,16 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     // Convenience functions.
-    pub fn find<'a, L: Lens<In = E> + Clone>(
-        &'a self,
-        lens: L,
+    pub fn find<Out: Entry>(
+        &self,
+        lens: impl Lens<E, Out> + Clone,
         // ids: impl Iterator<Item = entry::Id<Entry>>,
-        f: impl Fn(entry::BufConst<'_, L::Out>) -> bool,
-    ) -> Result<Option<(entry::Id<E>, entry::BufConst<'a, L::Out>)>, GetError>
+        f: impl Fn(entry::BufConst<Out>) -> bool,
+    ) -> Result<Option<(entry::Id<E>, entry::BufConst<Out>)>, GetError>
     where <L as lens::Instance>::Out: 'a {
         for id in self.all_ids() {
             let buf = lens.clone().apply(unsafe { self.buf_unchecked(id) });
-            if f(L::Out::buf_rb_const(&buf)) {
+            if f(buf) {
                 return Ok(Some((id, buf)));
             }
         }
@@ -195,27 +195,29 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 
     // Doesn't check if src_id or dst_id are valid.
-    pub unsafe fn copy<L: Lens<In = E> + Clone>(
+    pub unsafe fn copy<Out: Entry>(
         &mut self,
-        lens: L,
+        lens: impl Lens<E, Out> + Clone,
         src_id: entry::Id<E>,
         dst_id: entry::Id<E>,
     ) {
-        let mut dst = unsafe { entry::buf_detach::<_, L::Out>(lens.clone().apply(self.buf_unchecked_mut(dst_id))) };
+        let mut dst = unsafe { lens.clone().apply(self.buf_unchecked_mut(dst_id)) };
         let src = lens.apply(self.buf_unchecked(src_id));
-        <L::Out as Entry>::buf_copy_to(src, dst);
+        src.copy_from(src);
     }
 
-    pub fn swap<L: Lens<In = E> + Clone>(
+    // Doesn't check if a_id or b_id are valid.
+    // It's OK if a_id == b_id.
+    pub unsafe fn swap<Out: Entry>(
         &mut self,
-        lens: L,
+        lens: impl Lens<E, Out> + Clone,
         a_id: entry::Id<E>,
         b_id: entry::Id<E>,
     ) {
         if a_id != b_id {
-            let mut a = unsafe { entry::buf_detach::<_, L::Out>(lens.clone().apply(self.buf_unchecked_mut(a_id))) };
+            let mut a = unsafe { lens.clone().apply(self.buf_unchecked_mut(a_id)) };
             let mut b = lens.apply(unsafe { self.buf_unchecked_mut(b_id) });
-            entry::buf_swap::<L::Out>(a, b);
+            a.swap(b);
         }
     }
 
@@ -233,32 +235,32 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     }
 }
 
-impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
-    pub fn get<L: Lens<In = E>>(&self, lens: L, id: entry::Id<E>) -> Option<L::Out>
-    where
-        L::Out: entry::Codable,
-    {
-        self.buf(id).map(|x| L::Out::decode(lens.apply(x)))
-    }
+// impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
+//     pub fn get<L: Lens<In = E>>(&self, lens: L, id: entry::Id<E>) -> Option<L::Out>
+//     where
+//         L::Out: entry::Codable,
+//     {
+//         self.buf(id).map(|x| L::Out::decode(lens.apply(x)))
+//     }
 
-    pub fn set<L: Lens<In = E>>(
-        &mut self,
-        lens: L,
-        id: entry::Id<E>,
-        value: impl entry::Readable<L::Out>,
-    ) -> bool
-    where
-        L::Out: entry::Codable,
-    {
-        if let Some(mut buf) = self.buf_mut(id) {
-            value.write_to(lens.apply(buf));
-            true
-        } else {
-            false
-        }
-    }
+//     pub fn set<L: Lens<In = E>>(
+//         &mut self,
+//         lens: L,
+//         id: entry::Id<E>,
+//         value: impl entry::Readable<L::Out>,
+//     ) -> bool
+//     where
+//         L::Out: entry::Codable,
+//     {
+//         if let Some(mut buf) = self.buf_mut(id) {
+//             value.write_to(lens.apply(buf));
+//             true
+//         } else {
+//             false
+//         }
+//     }
 
-    // fn linear_search<L: Lens<In = E>>(&self, lens: L, value: impl entry::Readable<L::Out>) {
-    //     let buf = value.into_buf();
-    // }
-}
+//     // fn linear_search<L: Lens<In = E>>(&self, lens: L, value: impl entry::Readable<L::Out>) {
+//     //     let buf = value.into_buf();
+//     // }
+// }

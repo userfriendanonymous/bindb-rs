@@ -10,7 +10,7 @@ pub mod variant;
 
 pub type Const = Value<variant::Const>;
 pub type Mut = Value<variant::Mut>;
-pub type Owned = Value<variant::Owned>;
+// pub type Owned = Value<variant::Owned>;
 
 #[derive(Clone, Copy)]
 pub struct Value<V: Variant>(V::Data);
@@ -31,21 +31,13 @@ impl<V: Variant> Value<V> {
         Value(V::index_range(self.0, at, len))
     }
 
+    pub fn to_const(self) -> Const {
+        Value(V::to_const(self.0))
+    }
+
     // fn into_owned(self) -> Value<{ O::LEN }, variant::Owned> {
     //     O::into_owned(self)
     // }
-}
-
-impl<V: variant::AsConst> Value<V> {
-    fn as_const(&self) -> Const {
-        Value(V::as_const(&self.0))
-    }
-}
-
-impl<V: variant::AsMut> Value<V> {
-    fn as_mut(&mut self) -> Mut {
-        Value(V::as_mut(&mut self.0))
-    }
 }
 
 // impl Const {
@@ -91,7 +83,7 @@ impl Mut {
         self.slice_mut().copy_within(src, dest)
     }
 
-    pub fn copy_from(self, src: &Const<'_>) {
+    pub fn copy_from(self, src: Const) {
         self.slice_mut().copy_from_slice(src.slice())
     }
 
@@ -99,7 +91,7 @@ impl Mut {
         self.slice_mut().copy_from_slice(slice);
     }
 
-    pub fn swap(self, with: Mut<'_>) {
+    pub fn swap(self, with: Mut) {
         self.slice_mut().swap_with_slice(with.slice_mut())
     }
 }

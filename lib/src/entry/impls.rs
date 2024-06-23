@@ -13,8 +13,8 @@ instance! {
 }
 
 impl<T> Codable for PhantomData<T> {
-    fn encode(&self, _buf: super::BufMut<'_, Self>) { }
-    fn decode(_buf: super::BufConst<'_, Self>) -> Self {
+    fn encode(&self, _buf: super::BufMut<Self>) { }
+    fn decode(_buf: super::BufConst<Self>) -> Self {
         PhantomData
     }
 }
@@ -30,11 +30,11 @@ instance! {
 }
 
 impl Codable for u32 {
-    fn encode(&self, mut buf: super::BufMut<'_, Self>) {
+    fn encode(&self, mut buf: super::BufMut<Self>) {
         buf.0.copy_from_slice(&self.to_be_bytes());
     }
 
-    fn decode(buf: super::BufConst<'_, Self>) -> Self {
+    fn decode(buf: super::BufConst<Self>) -> Self {
         Self::from_be_bytes(*unsafe { buf.0.array() })
     }
 }
@@ -50,11 +50,11 @@ instance! {
 }
 
 impl Codable for u64 {
-    fn encode(&self, mut buf: super::BufMut<'_, Self>) {
+    fn encode(&self, mut buf: super::BufMut<Self>) {
         buf.0.copy_from_slice(&self.to_be_bytes());
     }
 
-    fn decode(buf: super::BufConst<'_, Self>) -> Self {
+    fn decode(buf: super::BufConst<Self>) -> Self {
         Self::from_be_bytes(*unsafe { buf.0.array() })
     }
 }
@@ -84,10 +84,4 @@ instance! {
         type Buf<BV> = WowBuf<BV, T>;
     }
     impl<T: super::Instance + super::Codable> Codable for Wow<T> {}
-}
-
-
-fn idk() {
-    type Idk = <OptionLike::<u32> as crate::entry::Instance>::Buf<crate::entry::bytes::variant::Const<'static>>;
-    OptionLike::<u32>::field_idk::<crate::entry::bytes::variant::Const<'static>>(todo!());
 }

@@ -2,101 +2,65 @@ use std::cmp::Ordering;
 
 pub use bytes::Value as Bytes;
 pub use id::Value as Id;
+pub use ptr::Instance as Ptr;
 
-pub mod bytes;
+pub mod ptr;
 pub mod id;
 
 pub mod impls;
 
-pub type Buf<T: Instance, BV: bytes::Variant> = T::Buf<BV>;
-pub type BufConst<T: Instance> = T::Buf<bytes::variant::Const>;
-pub type BufMut<T: Instance> = T::Buf<bytes::variant::Mut>;
-pub type BufOwned<T: Instance> = T::Buf<bytes::variant::Owned>;
+pub type Buf<T: Instance, P: Ptr> = T::Buf<P>;
+pub type BufConst<T: Instance> = T::Buf<ptr::Const>;
+pub type BufMut<T: Instance> = T::Buf<ptr::Mut>;
 
-// pub unsafe fn buf_detach<'a, BV: bytes::variant::Ref, T: Instance>(buf: T::Buf<BV>) -> T::Buf<BV::Ref<'a>> {
-//     T::buf_detach(buf)
+// fn encode_to_owned<T: Codable>(value: &T) -> BufOwned<T> {
+//     let mut buf = T::buf(unsafe { bytes::Owned::new(vec![0; T::len()].into_boxed_slice()) });
+//     value.encode(T::buf_owned_as_mut(&mut buf));
+//     buf
 // }
-
-pub fn buf_swap<T: Instance>(a: BufMut<'_, T>, b: BufMut<'_, T>) {
-    T::buf_swap(a, b)
-}
-
-fn encode_to_owned<T: Codable>(value: &T) -> BufOwned<T> {
-    let mut buf = T::buf(unsafe { bytes::Owned::new(vec![0; T::len()].into_boxed_slice()) });
-    value.encode(T::buf_owned_as_mut(&mut buf));
-    buf
-}
 
 pub trait Instance {
-    fn len() -> usize;
-    // const LEN: usize;
-    type Buf<BV: bytes::Variant>: Clone + Copy;
-    fn buf<BV: bytes::Variant>(bytes: Bytes<BV>) -> Self::Buf<BV>;
-    // fn buf_rb_const(buf: &'a BufConst<Self>) -> BufConst<Self>;
-    // fn buf_rb_mut(buf: &'a mut BufMut<Self>) -> BufMut<Self>;
-    fn buf_as_const<BV: bytes::variant::AsConst>(buf: &Buf<Self, BV>) -> BufConst<Self>;
-    fn buf_as_mut<BV: bytes::variant::AsMut>(buf: &mut Buf<Self, BV>) -> BufMut<Self>;
-    // unsafe fn buf_detach<'b, BV: bytes::variant::Ref>(buf: Self::Buf<BV>) -> Self::Buf<BV::Ref<'b>>;
-    fn buf_copy_to(src: BufConst<Self>, dst: BufMut<Self>);
-    // unsafe fn buf_copy_nonoverlapping_to() {}
-    fn buf_swap(a: BufMut<Self>, b: BufMut<Self>);
+    type Buf<P: Ptr>: Clone + Copy;
+    const LEN: usize;
+    // fn len() -> usize;
+    fn buf<P: Ptr>(ptr: P) -> Self::Buf<P>;
+    fn buf_ptr<P: Ptr>(buf: Self::Buf<P>) -> P;
 }
 
-pub trait BufInstance {
+pub trait BufInstance: Clone + Copy {
+    type T: Instance;
+    fn to_const(self) -> BufConst<Self::T>;
 }
 
-impl<T: Instance, BV: bytes::Variant> BufInstance for T::Buf<BV> {
-
+pub trait BufInstanceMut: BufInstance {
+    fn swap(self, other: Self);
+    fn copy_from(self, src: BufConst<Self::T>);
 }
 
-pub trait BufInstanceAsConst: BufInstance {
-    fn as_const(&self) -> BufConst<Self>;
-}
-
-pub trait BufInstanceAsMut: BufInstance {
-    fn as_mut(&mut self) -> BufMut<Self>;
-}
-
-impl<T: Instance, BV: bytes::Variant> BufInstance for T::Buf<BV> {
-    
-}
-
-impl<T: Instance, BV: bytes::variant::AsConst> BufInstanceAsConst for T::Buf<BV> {
-    fn as_const(&self) -> BufConst<Self> {
-        T::buf_as_const(self)
+impl<T: Instance, P: Ptr> BufInstance for T::Buf<P> {
+    type T = T;
+    fn to_const(self) -> BufConst<T> {
+        T::buf(T::buf_ptr(self).to_const())
     }
 }
 
-impl<T: Instance, BV: bytes::variant::AsConst> BufInstanceAsMut for T::Buf<BV> {
-    fn as_mut(&mut self) -> BufMut<Self> {
-        T::buf_as_mut(self)
+impl<T: Instance> BufInstanceMut for BufMut<T> {
+    fn swap(self, other: Self) {
+        T::buf_ptr(self).swap(T::buf_ptr(other))
+    }
+
+    fn copy_from(self, src: BufConst<Self::T>) {
+        T::buf_ptr(self).copy_from(T::buf_ptr(src))
     }
 }
-
-
-// pub trait BufEq: Instance {
-//     fn buf_eq<'a>(a: BufConst<'a, Self>, b: BufConst<'a, Self>) -> bool;
-// }
-
-// pub trait BufOrd: Instance {
-//     fn buf_cmp<'a>(a: BufConst<'a, Self>, b: BufConst<'a, Self>) -> Ordering;
-// }
-
-// pub trait BufCopyTo: Instance {
-    
-// }
-
-// pub trait BufSwap: Instance {
-    
-// }
 
 pub trait Codable: Instance {
     fn encode(&self, buf: BufMut<Self>);
     fn decode(buf: BufConst<Self>) -> Self;
 
-    fn encode_to_owned(&self) -> BufOwned<Self> where Self: Sized {
-        encode_to_owned(self)
-    }
+    // fn encode_to_owned(&self) -> BufOwned<Self> where Self: Sized {
+    //     encode_to_owned(self)
+    // }
 }
 
 pub trait Readable<T: Instance> {
