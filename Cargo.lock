@@ -91,7 +91,6 @@ name = "lib"
 version = "0.1.0"
 dependencies = [
  "extend",
- "fmmap",
  "macros",
  "memmap2",
  "to_phantom",

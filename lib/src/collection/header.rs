@@ -9,17 +9,17 @@ entry! {
         pub meta: M
     }
 
-    buf! { struct Buf<BV, E, M>(Value<E, M>, BV); }
+    buf! { pub struct Buf<P, E, M>(Value<E, M>, P); }
 
     impl<E, M: Entry + entry::Codable> I for Value<E, M> {
-        type Buf<BV> = Buf<BV, E, M>;
+        type Buf<P> = Buf<P, E, M>;
     }
 
     impl<E, M: Entry + entry::Codable> Codable for Value<E, M> {}
 }
 
-impl<BV: entry::bytes::Variant, E, M: entry::Codable> Buf<BV, E, M> {
-    pub fn next_entry_id(self) -> entry::Buf<entry::Id<E>, BV> {
+impl<P: entry::Ptr, E, M: entry::Codable> Buf<P, E, M> {
+    pub fn next_entry_id(self) -> entry::Buf<entry::Id<E>, P> {
         Value::buf_next_entry_id(self)
     }
 }

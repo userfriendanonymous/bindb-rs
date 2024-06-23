@@ -3,10 +3,10 @@ use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops::{Add, Sub}};
 // #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 entry! {
     pub struct Value<T>(u64, PhantomData<T>);
-    buf! { pub struct Buf<BV, T>(Value<T>, BV); }
+    buf! { pub struct Buf<P, T>(Value<T>, P); }
 
     impl<T> I for Value<T> {
-        type Buf<BV> = Buf<BV, T>;
+        type Buf<P> = Buf<P, T>;
     }
     impl<T> Codable for Value<T> {}
 }

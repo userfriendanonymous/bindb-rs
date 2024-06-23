@@ -43,8 +43,8 @@ pub fn item_fields_data(item: &Item, lib: &syn::Path) -> ItemFieldsData {
                                             let LensFieldAttr { vis, fn_ident } = syn::parse(meta.tokens.clone().into()).expect("failed to parse lens attribute tokens");
                                             lens_fns = quote! {
                                                 #lens_fns
-                                                #vis fn #fn_ident<BV: #lib::entry::bytes::Variant>(buf: #lib::entry::Buf<Self, BV>) -> #lib::entry::Buf<#ty, BV> {
-                                                    <#ty as #lib::Entry>::buf(unsafe { buf.0.index_range(#len, <#ty as #lib::Entry>::len()) })
+                                                #vis fn #fn_ident<P: #lib::entry::Ptr>(buf: #lib::entry::Buf<Self, P>) -> #lib::entry::Buf<#ty, P> {
+                                                    <#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, #len, <#ty as #lib::Entry>::LEN) })
                                                 }
                                             }
                                         },
@@ -55,7 +55,7 @@ pub fn item_fields_data(item: &Item, lib: &syn::Path) -> ItemFieldsData {
                             }
                         }
                         len = quote! {
-                            #len + <#ty as #lib::Entry>::len()
+                            #len + <#ty as #lib::Entry>::LEN
                         }
                     }
                 }
@@ -63,7 +63,7 @@ pub fn item_fields_data(item: &Item, lib: &syn::Path) -> ItemFieldsData {
                     for field in &fields.unnamed {
                         let ty = &field.ty;
                         len = quote! {
-                            #len + <#ty as #lib::Entry>::len()
+                            #len + <#ty as #lib::Entry>::LEN
                         }
                     }
                 }
@@ -89,13 +89,13 @@ impl ImplInput {
         let (mut buf, mut len) = (None, None);
         for item in items {
             match item {
-                syn::ImplItem::Fn(item) => match item.sig.ident.to_string().as_str() {
-                    "len" => {
-                        let expr = item.block;
-                        len = Some(quote! { #expr })
-                    }
-                    _ => panic!("No such const item expected"),
-                },
+                syn::ImplItem::Const(item) => match item.ident.to_string().as_str() {
+                    "LEN" => {
+                        let expr = item.expr;
+                        len = Some(quote! { #expr });
+                    },
+                    _ => panic!("No such const item expected")
+                }
                 syn::ImplItem::Type(item) => match item.ident.to_string().as_str() {
                     "Buf" => buf = Some(item),
                     _ => panic!("No such type item expected"),
@@ -115,8 +115,8 @@ pub fn output(
     items: &BTreeMap<String, Item>,
     lib: &syn::Path,
 ) -> TokenStream {
-    let bv_trait_bound: syn::TraitBound =
-        syn::parse2(quote! { #lib::entry::bytes::Variant }).unwrap();
+    let ptr_trait_bound: syn::TraitBound =
+        syn::parse2(quote! { #lib::entry::Ptr }).unwrap();
 
     let self_ty = *value.self_ty;
     let (impl_generics, ty_generics, where_clause) = value.generics.split_for_impl();
@@ -159,7 +159,7 @@ pub fn output(
     let bv_param: &mut syn::TypeParam = &mut buf_generics.type_params_mut().next().unwrap();
     bv_param
         .bounds
-        .push(syn::TypeParamBound::Trait(bv_trait_bound));
+        .push(syn::TypeParamBound::Trait(ptr_trait_bound));
 
     let item_impl = if item_fields_data.is_external {
         quote! {
@@ -179,37 +179,18 @@ pub fn output(
         impl #impl_generics #lib::Entry for #self_ty #where_clause {
             type Buf #buf_generics = #buf_ty;
 
-            fn len() -> usize {
-                #len
-            }
+            const LEN: usize = #len;
+            // fn len() -> usize {
+            //     #len
+            // }
 
-            fn buf<BV: #lib::entry::bytes::Variant>(bytes: #lib::entry::Bytes<BV>) -> Self::Buf<BV> {
-                #buf_path(bytes, std::marker::PhantomData)
+            fn buf<P: #lib::entry::Ptr>(ptr: P) -> Self::Buf<P> {
+                #buf_path(ptr, std::marker::PhantomData)
             }
-            fn buf_mut_as_const<'a>(buf: &'a #lib::entry::BufMut<'a, Self>) -> #lib::entry::BufConst<'a, Self> {
-                Self::buf(buf.0.as_const())
-            }
-            fn buf_owned_as_const(buf: &#lib::entry::BufOwned<Self>) -> #lib::entry::BufConst<'_, Self> {
-                Self::buf(buf.0.as_const())
-            }
-            fn buf_owned_as_mut(buf: &mut #lib::entry::BufOwned<Self>) -> #lib::entry::BufMut<'_, Self> {
-                Self::buf(buf.0.as_mut())
-            }
-            fn buf_rb_const<'a>(buf: &'a #lib::entry::BufConst<'a, Self>) -> #lib::entry::BufConst<'a, Self> {
-                Self::buf(buf.0.rb_const())
-            }
-            fn buf_rb_mut<'a>(buf: &'a mut #lib::entry::BufMut<'a, Self>) -> #lib::entry::BufMut<'a, Self> {
-                Self::buf(buf.0.rb_mut())
-            }
-            unsafe fn buf_detach<'b, BV: #lib::entry::bytes::variant::Ref>(buf: Self::Buf<BV>) -> Self::Buf<BV::Ref<'b>> {
-                Self::buf(buf.0.detach())
-            }
-            fn buf_copy_to(src: #lib::entry::BufConst<'_, Self>, mut dst: #lib::entry::BufMut<'_, Self>) {
-                dst.0.copy_from(&src.0)
-            }
-            fn buf_swap(mut a: #lib::entry::BufMut<'_, Self>, mut b: #lib::entry::BufMut<'_, Self>) {
-                a.0.swap(&mut b.0)
+            fn buf_ptr<P: #lib::entry::Ptr>(buf: Self::Buf<P>) -> P {
+                buf.0
             }
         }
     }
 }
+

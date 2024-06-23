@@ -10,7 +10,7 @@ pub fn output(
     lib: &syn::Path,
 ) -> TokenStream {
     let bv_trait_bound: syn::TraitBound =
-        syn::parse2(quote! { #lib::entry::bytes::Variant }).unwrap();
+        syn::parse2(quote! { #lib::entry::Ptr }).unwrap();
 
     let self_ty = *value.self_ty;
     let (impl_generics, ty_generics, where_clause) = value.generics.split_for_impl();
@@ -43,9 +43,8 @@ pub fn output(
                     let ty = &field.ty;
                     quote! {
                         {
-                            let len = <#ty as #lib::Entry>::len();
-                            let b = (&mut buf.0).rb_mut();
-                            <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
+                            let len = <#ty as #lib::Entry>::LEN;
+                            <#ty as #lib::entry::Codable>::encode(&self.#ident, <#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, cursor, len) }));
                             cursor += len;
                         }
                     }
@@ -60,9 +59,8 @@ pub fn output(
                     let ty = &field.ty;
                     quote! {
                         #ident: {
-                            let len = <#ty as #lib::Entry>::len();
-                            let b = (&buf.0).rb_const();
-                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
+                            let len = <#ty as #lib::Entry>::LEN;
+                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, cursor, len) }));
                             cursor += len;
                             v
                         }
@@ -82,9 +80,8 @@ pub fn output(
                     let ty = &field.ty;
                     quote! {
                         {
-                            let len = <#ty as #lib::Entry>::len();
-                            let b = (&mut buf.0).rb_mut();
-                            <#ty as #lib::entry::Codable>::encode(&self.#index, <#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
+                            let len = <#ty as #lib::Entry>::LEN;
+                            <#ty as #lib::entry::Codable>::encode(&self.#index, <#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, cursor, len) }));
                             cursor += len;
                         }
                     }
@@ -98,9 +95,8 @@ pub fn output(
                     let ty = &field.ty;
                     quote! {
                         {
-                            let len = <#ty as #lib::Entry>::len();
-                            let b = (&buf.0).rb_const();
-                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { b.index_range(cursor, len) }));
+                            let len = <#ty as #lib::Entry>::LEN;
+                            let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, cursor, len) }));
                             cursor += len;
                             v
                         }
@@ -119,10 +115,10 @@ pub fn output(
 
     quote! {
         impl #impl_generics #lib::entry::Codable for #self_ty #where_clause {
-            fn encode<'a>(&'a self, mut buf: #lib::entry::BufMut<'a, Self>) {
+            fn encode(&self, mut buf: #lib::entry::BufMut<Self>) {
                 #encode_fn
             }
-            fn decode<'a>(buf: #lib::entry::BufConst<'a, Self>) -> Self {
+            fn decode(buf: #lib::entry::BufConst<Self>) -> Self {
                 #decode_fn
             }
         }

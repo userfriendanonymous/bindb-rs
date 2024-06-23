@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-pub use bytes::Value as Bytes;
 pub use id::Value as Id;
 pub use ptr::Instance as Ptr;
 
@@ -9,15 +8,23 @@ pub mod id;
 
 pub mod impls;
 
-pub type Buf<T: Instance, P: Ptr> = T::Buf<P>;
-pub type BufConst<T: Instance> = T::Buf<ptr::Const>;
-pub type BufMut<T: Instance> = T::Buf<ptr::Mut>;
+pub type Buf<T, P> = T::Buf<P>;
+pub type BufConst<T> = T::Buf<ptr::Const>;
+pub type BufMut<T> = T::Buf<ptr::Mut>;
 
 // fn encode_to_owned<T: Codable>(value: &T) -> BufOwned<T> {
 //     let mut buf = T::buf(unsafe { bytes::Owned::new(vec![0; T::len()].into_boxed_slice()) });
 //     value.encode(T::buf_owned_as_mut(&mut buf));
 //     buf
 // }
+
+pub fn buf_swap<T: Instance>(a: BufMut<T>, b: BufMut<T>) {
+    T::buf_ptr(a).swap(T::buf_ptr(b))
+}
+
+pub fn buf_copy_to<T: Instance>(src: BufConst<T>, dst: BufMut<T>) {
+    T::buf_ptr(src).copy_to(T::buf_ptr(dst))
+}
 
 pub trait Instance {
     type Buf<P: Ptr>: Clone + Copy;
@@ -27,32 +34,32 @@ pub trait Instance {
     fn buf_ptr<P: Ptr>(buf: Self::Buf<P>) -> P;
 }
 
-pub trait BufInstance: Clone + Copy {
-    type T: Instance;
-    fn to_const(self) -> BufConst<Self::T>;
-}
+// pub trait BufInstance: Clone + Copy {
+//     type T: Instance;
+//     fn to_const(self) -> BufConst<Self::T>;
+// }
 
-pub trait BufInstanceMut: BufInstance {
-    fn swap(self, other: Self);
-    fn copy_from(self, src: BufConst<Self::T>);
-}
+// pub trait BufInstanceMut: BufInstance {
+//     fn swap(self, other: Self);
+//     fn copy_from(self, src: BufConst<Self::T>);
+// }
 
-impl<T: Instance, P: Ptr> BufInstance for T::Buf<P> {
-    type T = T;
-    fn to_const(self) -> BufConst<T> {
-        T::buf(T::buf_ptr(self).to_const())
-    }
-}
+// impl<T: Instance, P: Ptr> BufInstance for T::Buf<P> {
+//     type T = T;
+//     fn to_const(self) -> BufConst<T> {
+//         T::buf(T::buf_ptr(self).to_const())
+//     }
+// }
 
-impl<T: Instance> BufInstanceMut for BufMut<T> {
-    fn swap(self, other: Self) {
-        T::buf_ptr(self).swap(T::buf_ptr(other))
-    }
+// impl<T: Instance> BufInstanceMut for BufMut<T> {
+//     fn swap(self, other: Self) {
+//         T::buf_ptr(self).swap(T::buf_ptr(other))
+//     }
 
-    fn copy_from(self, src: BufConst<Self::T>) {
-        T::buf_ptr(self).copy_from(T::buf_ptr(src))
-    }
-}
+//     fn copy_from(self, src: BufConst<Self::T>) {
+//         T::buf_ptr(self).copy_from(T::buf_ptr(src))
+//     }
+// }
 
 pub trait Codable: Instance {
     fn encode(&self, buf: BufMut<Self>);

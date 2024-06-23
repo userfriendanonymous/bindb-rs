@@ -1,5 +1,5 @@
 use crate::{
-    entry::{self, BufInstanceMut, Codable as _, Readable as _}, lens,
+    entry::{self, Codable as _, Readable as _}, lens,
     utils::{slice_to_array, slice_to_array_mut},
     Entry, Lens,
 };
@@ -98,14 +98,14 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
 
     fn header_buf(&self) -> entry::BufConst<Header<E, M>> {
         let len = Header::<E, M>::LEN;
-        let ptr = unsafe { entry::ptr::Const::new(self.file_map.get_unchecked(0 .. len), len) };
+        let ptr = unsafe { entry::ptr::Const::new(self.file_map.get_unchecked(0 .. len).as_ptr(), len) };
         Header::buf(ptr)
     }
 
     fn header_buf_mut(&mut self) -> entry::BufMut<Header<E, M>> {
         let len = Header::<E, M>::LEN;
-        let ptr = unsafe { entry::ptr::Mut::new(self.file_map.get_unchecked_mut(0 .. len), len) };
-        Header::buf(bytes)
+        let ptr = unsafe { entry::ptr::Mut::new(self.file_map.get_unchecked_mut(0 .. len).as_mut_ptr(), len) };
+        Header::buf(ptr)
     }
 
     fn set_next_entry_id(&mut self, value: entry::Id<E>) {
@@ -123,7 +123,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
 
     pub unsafe fn buf_unchecked_mut(&mut self, id: entry::Id<E>) -> entry::BufMut<E> {
         let offset = self.entry_offset(id);
-        let ptr = entry::ptr::Mut::new(self.file_map.get_unchecked_mut(offset .. offset + E::LEN).as_ptr(), E::LEN);
+        let ptr = entry::ptr::Mut::new(self.file_map.get_unchecked_mut(offset .. offset + E::LEN).as_mut_ptr(), E::LEN);
         E::buf(ptr)
     }
 
@@ -183,8 +183,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         lens: impl Lens<E, Out> + Clone,
         // ids: impl Iterator<Item = entry::Id<Entry>>,
         f: impl Fn(entry::BufConst<Out>) -> bool,
-    ) -> Result<Option<(entry::Id<E>, entry::BufConst<Out>)>, GetError>
-    where <L as lens::Instance>::Out: 'a {
+    ) -> Result<Option<(entry::Id<E>, entry::BufConst<Out>)>, GetError> {
         for id in self.all_ids() {
             let buf = lens.clone().apply(unsafe { self.buf_unchecked(id) });
             if f(buf) {
@@ -203,7 +202,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
     ) {
         let mut dst = unsafe { lens.clone().apply(self.buf_unchecked_mut(dst_id)) };
         let src = lens.apply(self.buf_unchecked(src_id));
-        src.copy_from(src);
+        entry::buf_copy_to::<Out>(src, dst);
     }
 
     // Doesn't check if a_id or b_id are valid.
@@ -217,7 +216,7 @@ impl<E: Entry, M: Entry + entry::Codable> Value<E, M> {
         if a_id != b_id {
             let mut a = unsafe { lens.clone().apply(self.buf_unchecked_mut(a_id)) };
             let mut b = lens.apply(unsafe { self.buf_unchecked_mut(b_id) });
-            a.swap(b);
+            entry::buf_swap::<Out>(a, b);
         }
     }
 

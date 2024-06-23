@@ -3,12 +3,10 @@ use std::marker::PhantomData;
 use super::Codable;
 
 instance! {
-    buf! { pub struct PhantomDataBuf<BV, T>(PhantomData<T>, BV); }
+    buf! { pub struct PhantomDataBuf<P, T>(PhantomData<T>, P); }
     impl<T> I for PhantomData<T> {
-        type Buf<BV> = PhantomDataBuf<BV, T>;
-        fn len() -> usize {
-            0
-        }
+        const LEN: usize = 0;
+        type Buf<P> = PhantomDataBuf<P, T>;
     }
 }
 
@@ -20,12 +18,10 @@ impl<T> Codable for PhantomData<T> {
 }
 
 instance! {
-    buf! { pub struct U32Buf<BV: super::bytes::Variant>(u32, BV); }
+    buf! { pub struct U32Buf<P>(u32, P); }
     impl I for u32 {
-        type Buf<BV> = U32Buf<BV>;
-        fn len() -> usize {
-            4
-        }
+        const LEN: usize = 4;
+        type Buf<P> = U32Buf<P>;
     }
 }
 
@@ -40,12 +36,10 @@ impl Codable for u32 {
 }
 
 instance! {
-    buf! { pub struct U64Buf<BV: super::bytes::Variant>(u64, BV); }
+    buf! { pub struct U64Buf<P>(u64, P); }
     impl I for u64 {
-        type Buf<BV> = U64Buf<BV>;
-        fn len() -> usize {
-            8
-        }
+        const LEN: usize = 8;
+        type Buf<P> = U64Buf<P>;
     }
 }
 
@@ -59,29 +53,29 @@ impl Codable for u64 {
     }
 }
 
-instance! {
-    #[derive(Clone, Debug)]
-    struct OptionLike<T: super::Instance> {
-        #[lens(pub field_idk)]
-        idk: T,
-        #[lens(pub field_id)]
-        id: u32,
-    }
+// instance! {
+//     #[derive(Clone, Debug)]
+//     struct OptionLike<T: super::Instance> {
+//         #[lens(pub field_idk)]
+//         idk: T,
+//         #[lens(pub field_id)]
+//         id: u32,
+//     }
     
-    buf! { pub struct OptionLikeBuf<BV, T: super::Instance>(OptionLike<T>, BV); }
+//     buf! { pub struct OptionLikeBuf<BV, T: super::Instance>(OptionLike<T>, BV); }
 
-    impl<T: super::Instance> I for OptionLike<T> {
-        type Buf<BV> = OptionLikeBuf<BV, T>;
-    }
+//     impl<T: super::Instance> I for OptionLike<T> {
+//         type Buf<BV> = OptionLikeBuf<BV, T>;
+//     }
 
-    impl<T: super::Instance + super::Codable> Codable for OptionLike<T> {}
-}
+//     impl<T: super::Instance + super::Codable> Codable for OptionLike<T> {}
+// }
 
-instance! {
-    struct Wow<T: super::Instance>(OptionLike<T>, u32);
-    buf! { pub struct WowBuf<BV, T: super::Instance>(Wow<T>, BV); }
-    impl<T: super::Instance> I for Wow<T> {
-        type Buf<BV> = WowBuf<BV, T>;
-    }
-    impl<T: super::Instance + super::Codable> Codable for Wow<T> {}
-}
+// instance! {
+//     struct Wow<T: super::Instance>(OptionLike<T>, u32);
+//     buf! { pub struct WowBuf<BV, T: super::Instance>(Wow<T>, BV); }
+//     impl<T: super::Instance> I for Wow<T> {
+//         type Buf<BV> = WowBuf<BV, T>;
+//     }
+//     impl<T: super::Instance + super::Codable> Codable for Wow<T> {}
+// }

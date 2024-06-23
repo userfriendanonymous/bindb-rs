@@ -1,11 +1,14 @@
+use std::ops::RangeBounds;
+
 use crate::utils::{slice_to_array, slice_to_array_mut};
 
-pub trait Instance {
+pub trait Instance: Clone + Copy + Sized {
     // Doesn't check if range is out of bounds.
     unsafe fn index_range(self, at: usize, len: usize) -> Self;
     fn to_const(self) -> Const;
 }
 
+#[derive(Clone, Copy)]
 pub struct Const {
     ptr: *const u8,
     len: usize,
@@ -13,7 +16,10 @@ pub struct Const {
 
 impl Instance for Const {
     unsafe fn index_range(self, at: usize, len: usize) -> Self {
-        Self(self.slice().get_unchecked(at .. at + len))
+        Self {
+            ptr: self.slice().get_unchecked(at .. at + len).as_ptr(),
+            len,
+        }
     }
 
     fn to_const(self) -> Const {
@@ -22,20 +28,25 @@ impl Instance for Const {
 }
 
 impl Const {
-    pub unsafe fn new(ptr: *const [u8], len: usize) -> Self {
+    pub unsafe fn new(ptr: *const u8, len: usize) -> Self {
         Self { ptr, len }
     }
 
-    pub fn slice(self) -> &[u8] {
+    pub fn slice<'a>(self) -> &'a [u8] {
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 
     // Doesn't check if length is correct.
-    pub unsafe fn array<const L: usize>(self) -> &[u8; L] {
+    pub unsafe fn array<'a, const L: usize>(self) -> &'a [u8; L] {
         slice_to_array(self.slice())
+    }
+
+    pub fn copy_to(self, dst: Mut) {
+        dst.copy_from(self)
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Mut {
     ptr: *mut u8,
     len: usize,
@@ -43,7 +54,10 @@ pub struct Mut {
 
 impl Instance for Mut {
     unsafe fn index_range(self, at: usize, len: usize) -> Self {
-        Self(self.0.get_unchecked_mut(at .. at + len))
+        Self {
+            ptr: self.slice().get_unchecked_mut(at .. at + len).as_mut_ptr(),
+            len
+        }
     }
 
     fn to_const(self) -> Const {
@@ -52,16 +66,16 @@ impl Instance for Mut {
 }
 
 impl Mut {
-    pub unsafe fn new(ptr: *mut [u8], len: usize) -> Self {
+    pub unsafe fn new(ptr: *mut u8, len: usize) -> Self {
         Self { ptr, len }
     }
 
-    pub fn slice(self) -> &mut [u8] {
+    pub fn slice<'a>(self) -> &'a mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 
     // Doesn't check if length is correct.
-    pub unsafe fn array<const L: usize>(self) -> &[u8; L] {
+    pub unsafe fn array<'a, const L: usize>(self) -> &'a [u8; L] {
         slice_to_array_mut(self.slice())
     }
 
