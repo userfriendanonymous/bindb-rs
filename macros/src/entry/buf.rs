@@ -69,5 +69,11 @@ pub fn output(mut input: Input, lib: &syn::Path) -> TokenStream {
         }
 
         impl #generics_params Copy for #ident #ty_generics {}
+
+        impl #generics_params #lib::entry::Readable<#entry_ty> for #ident #ty_generics {
+            fn write_to(self, buf: #lib::entry::BufMut<#entry_ty>) {
+                #lib::entry::buf_copy_to::<#entry_ty>(#ident(self.0.to_const(), ::std::marker::PhantomData), buf);
+            }
+        }
     }
 }

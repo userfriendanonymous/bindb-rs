@@ -1,5 +1,5 @@
 use super::Item;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use std::collections::BTreeMap;
 use syn::parse::Parser as _;
@@ -110,7 +110,146 @@ pub fn output(
                 };
             },
         },
-        Item::Enum(_) => todo!()
+        Item::Enum(value) => {
+            let variants_len = value.variants.len();
+            let (tag_size, tag_ty) = super::enum_tag_data(value);
+
+            let branches = value.variants.iter().enumerate().map(|(idx, variant)| {
+                let ident = &variant.ident;
+                let encode_fields;
+                let match_fields;
+                match &variant.fields {
+                    syn::Fields::Unit => {
+                        encode_fields = quote! {};
+                        match_fields = quote! {};
+                    },
+                    syn::Fields::Named(fields) => {
+                        let iter = fields.named.iter().map(|field| {
+                            let ident = field.ident.as_ref().unwrap();
+                            let ty = &field.ty;
+                            quote! {
+                                let len = <#ty as #lib::Entry>::LEN;
+                                <#ty as #lib::entry::Codable>::encode(#ident, <#ty as #lib::Entry>::buf(#lib::entry::Ptr::index_range(buf.0, cursor, len)));
+                                cursor += len;
+                            }
+                        });
+                        encode_fields = quote! {
+                            let mut cursor: usize = #tag_size;
+                            #( #iter )*
+                        };
+
+                        let iter = fields.named.iter().map(|field| {
+                            let ident = field.ident.as_ref().unwrap();
+                            quote! { #ident }
+                        });
+                        match_fields = quote! {
+                            { #( #iter ),* }
+                        };
+                    },
+                    syn::Fields::Unnamed(fields) => {
+                        let iter = fields.unnamed.iter().enumerate().map(|(idx, field)| {
+                            let ty = &field.ty;
+                            let ident = syn::Ident::new(&format!("field{idx}"), Span::call_site());
+                            quote! {
+                                let len = <#ty as #lib::Entry>::LEN;
+                                <#ty as #lib::entry::Codable>::encode(#ident, <#ty as #lib::Entry>::buf(#lib::entry::Ptr::index_range(buf.0, cursor, len)));
+                                cursor += len;
+                            }
+                        });
+                        encode_fields = quote! {
+                            let mut cursor: usize = #tag_size;
+                            #( #iter )*
+                        };
+
+                        let iter = fields.unnamed.iter().enumerate().map(|(idx, field)| {
+                            let ident = syn::Ident::new(&format!("field{idx}"), Span::call_site());
+                            quote! { #ident }
+                        });
+                        match_fields = quote! {
+                            ( #( #iter ),* )
+                        };
+                    }
+                }
+                quote! {
+                    Self::#ident #match_fields => {
+                        <#tag_ty as #lib::entry::Codable>::encode(
+                            &(#idx as #tag_ty),
+                            <#tag_ty as #lib::Entry>::buf(#lib::entry::Ptr::index_range(buf.0, 0, #tag_size))
+                        );
+                        #encode_fields
+                    }
+                }
+            });
+            encode_fn = quote! {
+                unsafe {
+                    match self {
+                        #( #branches ),*
+                    }
+                }
+            };
+
+            let branches = value.variants.iter().enumerate().map(|(idx, variant)| {
+                let idx = idx as u8;
+                let variant_ident = &variant.ident;
+                let decode_fields;
+                match &variant.fields {
+                    syn::Fields::Unit => {
+                        decode_fields = quote! { Self::#variant_ident };
+                    },
+                    syn::Fields::Named(fields) => {
+                        let iter = fields.named.iter().map(|field| {
+                            let ident = &field.ident;
+                            let ty = &field.ty;
+                            quote! {
+                                #ident: {
+                                    let len = <#ty as #lib::Entry>::LEN;
+                                    let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, cursor, len) }));
+                                    cursor += len;
+                                    v
+                                }
+                            }
+                        });
+                        decode_fields = quote! {
+                            let mut cursor: usize = #tag_size;
+                            Self::#variant_ident { #( #iter ),* }
+                        };
+                    },
+                    syn::Fields::Unnamed(fields) => {
+                        let iter = fields.unnamed.iter().map(|field| {
+                            let ty = &field.ty;
+                            quote! {
+                                {
+                                    let len = <#ty as #lib::Entry>::LEN;
+                                    let v = <#ty as #lib::entry::Codable>::decode(<#ty as #lib::Entry>::buf(unsafe { #lib::entry::Ptr::index_range(buf.0, cursor, len) }));
+                                    cursor += len;
+                                    v
+                                }
+                            }
+                        });
+                        decode_fields = quote! {
+                            let mut cursor: usize = #tag_size;
+                            Self::#variant_ident ( #( #iter ),* )
+                        };
+                    }
+                }
+                quote! {
+                    #idx => {
+                        #decode_fields
+                    }
+                }
+            });
+            decode_fn = quote! {
+                unsafe {
+                    let idx = <#tag_ty as #lib::entry::Codable>::decode(
+                        <#tag_ty as #lib::Entry>::buf(#lib::entry::Ptr::index_range(buf.0, 0, #tag_size))
+                    ) % (#variants_len as #tag_ty);
+                    match idx {
+                        #( #branches ),*
+                        _ => ::std::unreachable!()
+                    }
+                }
+            };
+        }
     }
 
     quote! {

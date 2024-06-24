@@ -17,6 +17,11 @@ impl Holder for Holder1 {
     type O = Owner1;
 }
 
+const IDK: usize = {
+    let a = 5;
+    let b = 7;
+    [a, b][(a < b) as usize]
+};
 trait Owner {
     type H: Holder;
 }

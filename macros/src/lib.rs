@@ -1,7 +1,7 @@
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse::{Parse, ParseStream}, parse_macro_input};
-
 mod entry;
 
 struct InputWithLibPath<Rest> {

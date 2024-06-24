@@ -9,9 +9,9 @@ entry! {
         pub meta: M
     }
 
-    buf! { pub struct Buf<P, E, M>(Value<E, M>, P); }
+    buf! { pub struct Buf<P, E, M: Entry>(Value<E, M>, P); }
 
-    impl<E, M: Entry + entry::Codable> I for Value<E, M> {
+    impl<E, M: Entry> I for Value<E, M> {
         type Buf<P> = Buf<P, E, M>;
     }
 

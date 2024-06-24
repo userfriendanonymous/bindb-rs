@@ -75,7 +75,33 @@ pub fn item_fields_data(item: &Item, lib: &syn::Path) -> ItemFieldsData {
                 is_external: false,
             }
         }
-        Item::Enum(_) => todo!(),
+        Item::Enum(item) => {
+            let (tag_size, tag_ty) = super::enum_tag_data(item);
+            let mut len = quote! { 0 };
+            //panic!("VARIANTS LEN: {}", &item.variants.len());
+            for variant in item.variants.iter() {
+                let mut fields_len = quote! { 0 };
+                for field in variant.fields.iter() {
+                    let ty = &field.ty;
+                    fields_len = quote! {
+                        #fields_len + <#ty as #lib::Entry>::LEN
+                    };
+                }
+                len = quote! {
+                    {
+                        let a = #len;
+                        let b = #fields_len;
+                        [a, b][(a < b) as usize]
+                    }
+                };
+            }
+            len = quote! { #tag_size + #len };
+            ItemFieldsData {
+                len,
+                lens_fns: quote! {},
+                is_external: false,
+            }
+        },
     }
 }
 
@@ -185,7 +211,7 @@ pub fn output(
             // }
 
             fn buf<P: #lib::entry::Ptr>(ptr: P) -> Self::Buf<P> {
-                #buf_path(ptr, std::marker::PhantomData)
+                #buf_path(ptr, ::std::marker::PhantomData)
             }
             fn buf_ptr<P: #lib::entry::Ptr>(buf: Self::Buf<P>) -> P {
                 buf.0
