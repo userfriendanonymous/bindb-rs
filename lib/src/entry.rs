@@ -41,6 +41,18 @@ pub trait Instance {
 pub trait Codable: Instance {
     fn encode(&self, buf: BufMut<Self>);
     fn decode(buf: BufConst<Self>) -> Self;
+    
+    // Future plans.
+    fn is_valid(buf: BufConst<Self>) -> bool {
+        unimplemented!()
+    }
+    fn decode_checked(buf: BufConst<Self>) -> Option<Self> {
+        if Self::is_valid(buf) {
+            Some(Self::decode(buf))
+        } else {
+            None
+        }
+    }
 
     // fn encode_to_owned(&self) -> BufOwned<Self> where Self: Sized {
     //     encode_to_owned(self)
