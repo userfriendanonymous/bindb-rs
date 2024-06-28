@@ -45,7 +45,7 @@ entry! {
 
 impl Codable for bool {
     fn encode(&self, mut buf: BufMut<Self>) {
-        unsafe { *buf.0.get_unchecked_mut(0) = if *self { 1 } else { 0 } }
+        unsafe { *buf.0.get_unchecked_mut(0) = *self as u8 }
     }
 
     fn decode(buf: BufConst<Self>) -> Self {

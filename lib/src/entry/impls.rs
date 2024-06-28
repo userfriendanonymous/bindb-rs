@@ -26,15 +26,25 @@ entry! {
 }
 
 impl<T: Codable, const N: usize> Codable for [T; N] {
-    fn encode(&self, buf: BufMut<Self>) {
+    default fn encode(&self, buf: BufMut<Self>) {
         for idx in 0 .. N {
             unsafe { buf.0.index_range(idx * T::LEN, T::LEN).encode(self.get_unchecked(idx)); }
         }
     }
 
-    fn decode(buf: BufConst<Self>) -> Self {
+    default fn decode(buf: BufConst<Self>) -> Self {
         array::from_fn(|idx| {
             unsafe { buf.0.index_range(idx * T::LEN, T::LEN).decode() }
         })
+    }
+}
+
+impl<const N: usize> Codable for [u8; N] {
+    fn encode(&self, buf: BufMut<Self>) {
+        buf.0.copy_from_slice(self);
+    }
+
+    fn decode(buf: BufConst<Self>) -> Self {
+        unsafe { *buf.0.array() }
     }
 }
