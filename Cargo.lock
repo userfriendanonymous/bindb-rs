@@ -12,6 +12,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "binbuf"
+version = "0.1.0"
+dependencies = [
+ "binbuf_macros",
+]
+
+[[package]]
+name = "binbuf_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "to_phantom",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -90,8 +107,8 @@ dependencies = [
 name = "lib"
 version = "0.1.0"
 dependencies = [
+ "binbuf",
  "extend",
- "macros",
  "memmap2",
  "to_phantom",
 ]
@@ -107,16 +124,6 @@ name = "linux-raw-sys"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
-
-[[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
- "to_phantom",
-]
 
 [[package]]
 name = "memchr"

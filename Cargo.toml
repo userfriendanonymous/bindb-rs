@@ -1,2 +1,2 @@
 [workspace]
-members = ["testing", "lib", "macros"]
+members = ["testing", "binbuf_macros", "binbuf", "lib"]

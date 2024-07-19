@@ -12,5 +12,5 @@ edition = "2021"
 [dependencies]
 extend = "1.2.0"
 memmap2 = "0.9.4"
-macros = { version = "0.1.0", path = "../macros" }
 to_phantom = "0.1.0"
+binbuf = { path = "../binbuf" }
