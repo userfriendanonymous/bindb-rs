@@ -14,3 +14,4 @@ extend = "1.2.0"
 memmap2 = "0.9.4"
 to_phantom = "0.1.0"
 binbuf = { path = "../binbuf" }
+rand = "0.8.5"

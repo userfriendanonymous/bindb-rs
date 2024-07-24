@@ -104,13 +104,22 @@ impl<E: binbuf::Dynamic> Value<E> {
 
     pub unsafe fn remove(&mut self, id: u64) -> Result<(), RemoveError> {
         let raw_id = binbuf::fixed::decode::<IndexData, _>(self.indices.buf_unchecked(id));
+        println!("remove raw_id");
         self.raw.remove(raw_id).map_err(RemoveError::RawRemove)?;
+        println!("raw removed");
 
-        if id == self.indices.last_id() {
-            self.indices.remove_last().map_err(RemoveError::RemoveLastIndex)?;
-        } else {
+        if self.indices.remove_if_last(id).map_err(RemoveError::RemoveLastIndex)? {
             self.free_ids.add(&id).map_err(RemoveError::AddFreeId)?;
+            println!("free_ids added");
         }
+
+        // if id == self.indices.last_id() {
+        //     self.indices.remove_last().map_err(RemoveError::RemoveLastIndex)?;
+        //     println!("indices removed last");
+        // } else {
+        //     self.free_ids.add(&id).map_err(RemoveError::AddFreeId)?;
+        //     println!("free_ids added");
+        // }
         Ok(())
     }
 }

@@ -72,6 +72,10 @@ impl Const {
     //     T::decode(T::buf(self))
     // }
 
+    pub unsafe fn cast_to_ref<'a, T>(self) -> &'a T {
+        &*self.ptr.cast::<T>()
+    }
+
     pub unsafe fn from_slice(slice: &[u8]) -> Self {
         Self { ptr: slice.as_ptr(), len: slice.len() }
     }
@@ -164,6 +168,10 @@ impl Mut {
         Self { ptr: slice.as_mut_ptr(), len: slice.len() }
     }
 
+    pub unsafe fn cast_to_ref<'a, T>(self) -> &'a mut T {
+        &mut *self.ptr.cast::<T>()
+    }
+
     // Ensure this ptr is of correct length.
     // pub unsafe fn encode<T: entry::Codable>(self, value: &T) {
     //     T::encode(value, T::buf(self))
@@ -174,7 +182,7 @@ impl Mut {
     }
 
     // Doesn't check if length is correct.
-    pub unsafe fn array<'a, const L: usize>(self) -> &'a [u8; L] {
+    pub unsafe fn array<'a, const L: usize>(self) -> &'a mut [u8; L] {
         slice_to_array_mut(self.slice())
     }
 

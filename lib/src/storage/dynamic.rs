@@ -177,36 +177,53 @@ impl<E: binbuf::Dynamic> Value<E> {
         let entry_loc_buf = binbuf::entry::buf_mut_from_slice::<FreeLocation>(&mut entry_loc_store);
         entry_loc.encode(entry_loc_buf);
 
+        println!("Initial entry location: start = {}, end = {}", entry_loc.start, entry_loc.end);
+
         let is_last_entry = entry_loc.end == self.bytes_len;
 
         let mut loc_expanded = (false, is_last_entry);
-        for loc_id in self.free_locations.all_ids() {
+        let mut loc_id = 0u64;
+        loop {
+            if loc_id >= self.free_locations.len() {
+                println!("Free locations end reached at loc_id = {}", loc_id);
+                break;
+            }
             let loc_buf = self.free_locations.buf_unchecked(loc_id);
 
-            if binbuf::fixed::decode::<u64, _>(loc_buf.end()).buf_eq(
+            if !loc_expanded.0 && binbuf::fixed::decode::<u64, _>(loc_buf.end()).buf_eq(
                 binbuf::fixed::buf_to_const::<u64, _>(entry_loc_buf.start())
             ) {
+                println!("(test_loc)[entry_loc]---- Test location end = entry location start");
                 binbuf::fixed::buf_copy_to::<u64>(loc_buf.start(), entry_loc_buf.start());
+                println!("!!! new loc: start = {}", binbuf::fixed::decode::<u64, _>(entry_loc_buf.start()));
                 self.free_locations.swap_remove(loc_id).map_err(RemoveError::FixedSwapRemove)?;
                 loc_expanded.0 = true;
-            }
 
-            if !loc_expanded.1 && binbuf::fixed::decode::<u64, _>(loc_buf.start()).buf_eq(
+            } else if !loc_expanded.1 && binbuf::fixed::decode::<u64, _>(loc_buf.start()).buf_eq(
                 binbuf::fixed::buf_to_const::<u64, _>(entry_loc_buf.end())
             ) {
+                println!("----[entry_loc](test_loc) Test location start = entry location end");
                 binbuf::fixed::buf_copy_to::<u64>(loc_buf.end(), entry_loc_buf.end());
+                println!("!!! new loc: end = {}", binbuf::fixed::decode::<u64, _>(entry_loc_buf.end()));
                 self.free_locations.swap_remove(loc_id).map_err(RemoveError::FixedSwapRemove)?;
                 loc_expanded.1 = true;
+
+            } else {
+                println!("Test location not matched.");
+                loc_id += 1;
             }
 
             if loc_expanded.0 && loc_expanded.1 {
+                println!("Both locations matched. Breaking testing.");
                 break;
             }
         }
 
         if is_last_entry {
-            self.bytes_len -= entry_len_u64;
-            self.margin += entry_len_u64;
+            let size_dec = binbuf::fixed::decode::<u64, _>(entry_loc_buf.end())
+                - binbuf::fixed::decode::<u64, _>(entry_loc_buf.start());
+            self.bytes_len -= size_dec;
+            self.margin += size_dec;
             if self.margin >= self.max_margin {
                 let new_len = self.entry_offset(EntryId(self.bytes_len + self.margin % self.max_margin));
                 self.entries_file.set_len(new_len as u64).map_err(RemoveError::Io)?;

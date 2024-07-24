@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::storage;
 
 macro_rules! open_file {
@@ -132,6 +134,42 @@ pub fn indexed_dynamic_test1() {
 }
 
 // #[test]
+pub fn indexed_dynamic_test2() {
+    init();
+    let mut db = unsafe {
+        storage::IndexedDynamic::<String>::open(
+            storage::Dynamic::create(
+                storage::Fixed::create(
+                    open_file!("./local/indexed_dynamic1_free_locations"),
+                    10,
+                ).unwrap(),
+                open_file!("./local/indexed_dynamic1"),
+                10,
+            ).unwrap(),
+            storage::Fixed::create(
+                open_file!("./local/indexed_dynamic1_indices"),
+                10
+            ).unwrap(),
+            storage::Fixed::create(
+                open_file!("./local/indexed_dynamic1_free_ids"),
+                10
+            ).unwrap(),
+        ).unwrap()
+    };
+
+    for i in 0 .. 100 {
+        db.add(&"Some value!".to_string()).unwrap();
+    }
+    for i in 0 .. 100 {
+        unsafe { db.remove(i) }.unwrap();
+    }
+    // let id1 = db.add(&"What's up?".to_string()).unwrap();
+    // let id2 = db.add(&"Loli".to_string()).unwrap();
+    // unsafe { db.remove(id1).unwrap() };
+    // unsafe { db.remove(id2).unwrap() };
+}
+
+// #[test]
 pub fn single_test1() {
     init();
     let entry = "What's up!?".to_string();
@@ -171,4 +209,38 @@ pub fn binary_tree_test1() {
     db.remove(&584);
 
     assert_eq!(db.get(&584), None);
+}
+
+// #[test]
+pub fn binary_tree_test2() {
+    use binbuf::impls::{ArbNum, arb_num};
+    init();
+    let entry = "What's up!?".to_string();
+    let mut db = unsafe {
+        storage::BinaryTree::<ArbNum<4, u64>, u64, TestEntry1>::create(
+            storage::Fixed::create(open_file!("./local/binary_tree1_nodes"), 10).unwrap(),
+            storage::Fixed::create(open_file!("./local/binary_tree_free_ids"), 10).unwrap(),
+            open_file!("./local/binary_tree1_header")
+        ).unwrap()
+    };
+
+    let mut rng = rand::thread_rng();
+    let mut keys = Vec::new();
+
+    for i in 0 .. 100 {
+        let key = rng.r#gen::<u64>();
+        if !db.add(&key, &TestEntry1 { idx: 5, opt: Some(false) }).unwrap() {
+            keys.push(key);
+        }
+    }
+
+    for key in &keys {
+        assert_eq!(db.get(key).unwrap(), TestEntry1 { idx: 5, opt: Some(false) });
+    }
+
+    for key in &keys {
+        if db.remove(key).unwrap() {
+            panic!("Key {key} doesn't exist! Failed to remove!");
+        }
+    }
 }
