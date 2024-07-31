@@ -133,7 +133,7 @@ pub fn indexed_dynamic_test1() {
     unsafe { db.remove(id).unwrap() };
 }
 
-// #[test]
+#[test]
 pub fn indexed_dynamic_test2() {
     init();
     let mut db = unsafe {
@@ -157,12 +157,20 @@ pub fn indexed_dynamic_test2() {
         ).unwrap()
     };
 
-    for i in 0 .. 100 {
+    for i in 0 .. 10 {
         db.add(&"Some value!".to_string()).unwrap();
     }
-    for i in 0 .. 100 {
+    for i in 0 .. 10 {
         unsafe { db.remove(i) }.unwrap();
     }
+    let mut ids = Vec::new();
+    for i in 0 .. 10 {
+        ids.push(db.add(&"Some value!".to_string()).unwrap());
+    }
+    for id in ids {
+        assert_eq!(db.get(id), "Some value!".to_string());
+    }
+
     // let id1 = db.add(&"What's up?".to_string()).unwrap();
     // let id2 = db.add(&"Loli".to_string()).unwrap();
     // unsafe { db.remove(id1).unwrap() };

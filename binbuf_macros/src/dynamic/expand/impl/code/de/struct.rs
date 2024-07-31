@@ -17,8 +17,7 @@ pub fn output(item: &ItemStruct, lib: &syn::Path) -> TokenStream {
                 let ty = &field.ty;
                 quote! {
                     #ident: {
-                        let len = <#ty as #lib::Fixed>::LEN;
-                        let v = <#ty as #lib::fixed::Codable>::decode(<#ty as #lib::Fixed>::buf(unsafe { #lib::fixed::Ptr::index_range(buf.0, cursor, len) }));
+                        let (v, len) = <#ty as #lib::dynamic::Decode>::decode(<#ty as #lib::Entry>::buf(unsafe { #lib::dynamic::Ptr::range_from(buf.0, cursor) }));
                         cursor += len;
                         v
                     }
@@ -27,9 +26,10 @@ pub fn output(item: &ItemStruct, lib: &syn::Path) -> TokenStream {
             decode_fn = quote! {
                 unsafe {
                     let mut cursor: usize = 0;
-                    Self {
+                    let s = Self {
                         #( #iter ),*
-                    }
+                    };
+                    (s, cursor)
                 }
             };
         }
@@ -38,8 +38,7 @@ pub fn output(item: &ItemStruct, lib: &syn::Path) -> TokenStream {
                 let ty = &field.ty;
                 quote! {
                     {
-                        let len = <#ty as #lib::Fixed>::LEN;
-                        let v = <#ty as #lib::fixed::Codable>::decode(<#ty as #lib::Fixed>::buf(unsafe { #lib::fixed::Ptr::index_range(buf.0, cursor, len) }));
+                        let (v, len) = <#ty as #lib::dynamic::Decode>::decode(<#ty as #lib::Entry>::buf(unsafe { #lib::dynamic::Ptr::range_from(buf.0, cursor) }));
                         cursor += len;
                         v
                     }
@@ -48,9 +47,10 @@ pub fn output(item: &ItemStruct, lib: &syn::Path) -> TokenStream {
             decode_fn = quote! {
                 unsafe {
                     let mut cursor: usize = 0;
-                    Self (
+                    let s = Self (
                         #( #iter ),*
-                    )
+                    );
+                    (s, cursor)
                 }
             };
         },

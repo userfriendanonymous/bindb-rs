@@ -17,6 +17,11 @@ pub enum SetError {
     Io(std::io::Error),
 }
 
+pub enum OpenMode<T> {
+    New(T),
+    Existing,
+}
+
 pub struct Value<T> {
     file: File,
     mmap: MmapMut,
@@ -25,18 +30,20 @@ pub struct Value<T> {
 }
 
 impl<T: binbuf::Dynamic> Value<T> {
-    pub unsafe fn open(file: File) -> Result<Self, OpenError> {
-        let mmap = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
-        let len = binbuf::dynamic::ptr_len::<T>(bytes_ptr::Const::from_slice(&mmap[0 .. ]));
-        Ok(Self { file, mmap, len, _marker: PhantomData })
-    }
-
-    pub unsafe fn create(file: File, value: impl binbuf::dynamic::Readable<T>) -> Result<Self, CreateError> {
-        let len = value.len();
-        file.set_len(len as u64).map_err(CreateError::Io)?;
-        let mut mmap = MmapMut::map_mut(&file).map_err(CreateError::Io)?;
-        let buf = unsafe { T::buf(bytes_ptr::Mut::from_slice(&mut mmap[0 .. ])) };
-        value.write_to(buf);
+    pub unsafe fn open(mode: OpenMode<impl binbuf::dynamic::Readable<T>>, file: File) -> Result<Self, OpenError> {
+        let mut mmap = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
+        let len = match mode {
+            OpenMode::New(value) => {
+                let len = value.len();
+                file.set_len(len as u64).map_err(OpenError::Io)?;
+                let buf = unsafe { T::buf(bytes_ptr::Mut::from_slice(&mut mmap[0 .. ])) };
+                value.write_to(buf);
+                len
+            },
+            OpenMode::Existing => {
+                binbuf::dynamic::ptr_len::<T>(bytes_ptr::Const::from_slice(&mmap[0 .. ]))
+            }
+        };
         Ok(Self { file, mmap, len, _marker: PhantomData })
     }
 

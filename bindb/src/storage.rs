@@ -9,3 +9,9 @@ pub mod dynamic;
 pub mod indexed_dynamic;
 pub mod binary_tree;
 pub mod single;
+
+#[derive(Clone, Copy, Debug)]
+pub enum OpenMode {
+    New,
+    Existing,
+}

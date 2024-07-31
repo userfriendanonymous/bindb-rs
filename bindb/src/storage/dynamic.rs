@@ -1,5 +1,7 @@
-use std::{fs::File, marker::PhantomData};
+use std::{fs::File, marker::PhantomData, path::{Path, PathBuf}, pin::pin};
 use binbuf::{bytes_ptr, fixed::BufPartialEq, BytesPtr, Entry, Fixed as _};
+use super::OpenMode;
+
 pub use {entry_id::Value as EntryId, header::Value as Header};
 use memmap2::{Mmap, MmapMut, MmapOptions};
 
@@ -43,11 +45,24 @@ pub enum RemoveError {
 #[derive(Debug)]
 pub enum OpenError {
     Io(std::io::Error),
+    FixedOpen(super::fixed::OpenError)
 }
 
-#[derive(Debug)]
-pub enum CreateError {
-    Io(std::io::Error),
+pub struct OpenFiles {
+    pub entries: File,
+    pub free_locations: File,
+}
+
+pub struct OpenMaxMargins {
+    pub entries: u64,
+    pub free_locations: u64,
+}
+
+
+pub struct OpenConfig {
+    pub mode: OpenMode,
+    pub files: OpenFiles,
+    pub max_margins: OpenMaxMargins,
 }
 
 pub struct Value<E> {
@@ -62,45 +77,52 @@ pub struct Value<E> {
 }
 
 impl<E: binbuf::Dynamic> Value<E> {
-    pub unsafe fn create(free_locations: super::Fixed<FreeLocation>, entries_file: File, max_margin: u64) -> Result<Self, CreateError> {
-        entries_file.set_len(Header::LEN as u64).map_err(CreateError::Io)?;
-        let mut entries_mmap = MmapMut::map_mut(&entries_file).map_err(CreateError::Io)?;
-        unsafe { binbuf::fixed::encode_ptr(
-            bytes_ptr::Mut::from_slice(&mut entries_mmap[0 .. Header::LEN]),
-            &Header { len: 0, bytes_len: 0 }
-        ); }
-
-        Ok(Self {
-            len: 0,
-            bytes_len: 0,
-            free_locations,
-            entries_file,
-            entries_mmap,
-            margin: 0,
-            max_margin,
-            _marker: PhantomData
-        })
-    }
-
-    pub unsafe fn open(free_locations: super::Fixed<FreeLocation>, entries_file: File, max_margin: u64) -> Result<Self, OpenError> {
-        let entries_mmap = MmapMut::map_mut(&entries_file).map_err(OpenError::Io)?;
-        let header = binbuf::fixed::decode::<Header, _>(
-            Header::buf(bytes_ptr::Const::new(entries_mmap[0 .. Header::LEN].as_ptr(), Header::LEN))
-        );
+    pub unsafe fn open(OpenConfig { mode, files, max_margins }: OpenConfig) -> Result<Self, OpenError> {
+        if let OpenMode::New = mode {
+            files.entries.set_len(Header::LEN as u64).map_err(OpenError::Io)?;
+        }
+        let mut entries_mmap = MmapMut::map_mut(&files.entries).map_err(OpenError::Io)?;
+        let header = match mode {
+            OpenMode::Existing => binbuf::fixed::decode::<Header, _>(
+                Header::buf(bytes_ptr::Const::new(entries_mmap[0 .. Header::LEN].as_ptr(), Header::LEN))
+            ),
+            OpenMode::New => unsafe {
+                binbuf::fixed::encode_ptr(
+                    bytes_ptr::Mut::from_slice(&mut entries_mmap[0 .. Header::LEN]),
+                    &Header { len: 0, bytes_len: 0 }
+                );
+                Header { len: 0, bytes_len: 0 }
+            }
+        };
         Ok(Self {
             len: header.len,
             bytes_len: header.bytes_len,
-            free_locations,
-            entries_file,
+            free_locations: super::Fixed::open(mode, files.free_locations, max_margins.free_locations).map_err(OpenError::FixedOpen)?,
+            entries_file: files.entries,
             entries_mmap,
             margin: 0,
-            max_margin,
+            max_margin: max_margins.entries,
             _marker: PhantomData
         })
     }
 
     fn entry_offset(&self, id: EntryId) -> usize {
         Header::LEN + id.0 as usize
+    }
+
+    fn header_buf(&self) -> binbuf::BufConst<Header> {
+        let ptr = unsafe { bytes_ptr::Const::from_slice(&self.entries_mmap[0 .. Header::LEN]) };
+        unsafe { Header::buf(ptr) }
+    }
+
+    fn header_buf_mut(&mut self) -> binbuf::BufMut<Header> {
+        let ptr = unsafe { bytes_ptr::Mut::from_slice(&mut self.entries_mmap[0 .. Header::LEN]) };
+        unsafe { Header::buf(ptr) }
+    }
+
+    fn set_bytes_len(&mut self, value: u64) {
+        self.bytes_len = value;
+        value.encode(Header::buf_bytes_len(self.header_buf_mut()));
     }
 
     // Doesn't check if id is valid. It's impossible to check that.
@@ -136,7 +158,7 @@ impl<E: binbuf::Dynamic> Value<E> {
                     unsafe { self.free_locations.swap_remove(loc_id).map_err(AddError::FixedSwapRemove) }?;
                 } else {
                     self.free_locations.set(loc_id, &FreeLocation {
-                        start: entry_len_u64,
+                        start: loc.start + entry_len_u64,
                         end: loc.end,
                     });
                 }
@@ -155,7 +177,7 @@ impl<E: binbuf::Dynamic> Value<E> {
             let entry_id = EntryId(self.bytes_len);
             let written_len = entry.write_to(unsafe { self.buf_mut_unchecked(entry_id) });
             debug_assert_eq!(written_len, entry_len);
-            self.bytes_len += entry_len_u64;
+            self.set_bytes_len(self.bytes_len + entry_len_u64);
             self.margin = margin_extra - entry_len_u64;
             Ok(entry_id)
 
@@ -163,29 +185,34 @@ impl<E: binbuf::Dynamic> Value<E> {
             let entry_id = EntryId(self.bytes_len);
             let written_len = entry.write_to(unsafe { self.buf_mut_unchecked(entry_id) });
             debug_assert_eq!(written_len, entry_len);
-            self.bytes_len += entry_len_u64;
+            self.set_bytes_len(self.bytes_len + entry_len_u64);
             self.margin -= entry_len_u64;
             Ok(entry_id)
         }
     }
 
+    pub fn free_locations_len(&self) -> u64 {
+        self.free_locations.len()
+    }
+
     pub unsafe fn remove(&mut self, id: EntryId) -> Result<(), RemoveError> {
         let entry_len = binbuf::dynamic::buf_len::<E>(self.buf_unchecked(id));
         let entry_len_u64 = entry_len as u64;
-        let mut entry_loc_store = [0; FreeLocation::LEN];
+        let mut entry_loc_store = pin!([0; FreeLocation::LEN]);
         let entry_loc = FreeLocation { start: id.0, end: id.0 + entry_len_u64 };
-        let entry_loc_buf = binbuf::entry::buf_mut_from_slice::<FreeLocation>(&mut entry_loc_store);
-        entry_loc.encode(entry_loc_buf);
 
-        println!("Initial entry location: start = {}, end = {}", entry_loc.start, entry_loc.end);
+        let entry_loc_buf = binbuf::entry::buf_mut_from_slice::<FreeLocation>(&mut *entry_loc_store);
+        entry_loc.encode(entry_loc_buf);
 
         let is_last_entry = entry_loc.end == self.bytes_len;
 
         let mut loc_expanded = (false, is_last_entry);
         let mut loc_id = 0u64;
+        
         loop {
             if loc_id >= self.free_locations.len() {
-                println!("Free locations end reached at loc_id = {}", loc_id);
+                if !loc_expanded.0 && !loc_expanded.1 {
+                }
                 break;
             }
             let loc_buf = self.free_locations.buf_unchecked(loc_id);
@@ -193,28 +220,22 @@ impl<E: binbuf::Dynamic> Value<E> {
             if !loc_expanded.0 && binbuf::fixed::decode::<u64, _>(loc_buf.end()).buf_eq(
                 binbuf::fixed::buf_to_const::<u64, _>(entry_loc_buf.start())
             ) {
-                println!("(test_loc)[entry_loc]---- Test location end = entry location start");
                 binbuf::fixed::buf_copy_to::<u64>(loc_buf.start(), entry_loc_buf.start());
-                println!("!!! new loc: start = {}", binbuf::fixed::decode::<u64, _>(entry_loc_buf.start()));
                 self.free_locations.swap_remove(loc_id).map_err(RemoveError::FixedSwapRemove)?;
                 loc_expanded.0 = true;
 
             } else if !loc_expanded.1 && binbuf::fixed::decode::<u64, _>(loc_buf.start()).buf_eq(
                 binbuf::fixed::buf_to_const::<u64, _>(entry_loc_buf.end())
             ) {
-                println!("----[entry_loc](test_loc) Test location start = entry location end");
                 binbuf::fixed::buf_copy_to::<u64>(loc_buf.end(), entry_loc_buf.end());
-                println!("!!! new loc: end = {}", binbuf::fixed::decode::<u64, _>(entry_loc_buf.end()));
                 self.free_locations.swap_remove(loc_id).map_err(RemoveError::FixedSwapRemove)?;
                 loc_expanded.1 = true;
 
             } else {
-                println!("Test location not matched.");
                 loc_id += 1;
             }
 
             if loc_expanded.0 && loc_expanded.1 {
-                println!("Both locations matched. Breaking testing.");
                 break;
             }
         }
@@ -222,16 +243,18 @@ impl<E: binbuf::Dynamic> Value<E> {
         if is_last_entry {
             let size_dec = binbuf::fixed::decode::<u64, _>(entry_loc_buf.end())
                 - binbuf::fixed::decode::<u64, _>(entry_loc_buf.start());
-            self.bytes_len -= size_dec;
+            self.set_bytes_len(self.bytes_len - size_dec);
             self.margin += size_dec;
             if self.margin >= self.max_margin {
                 let new_len = self.entry_offset(EntryId(self.bytes_len + self.margin % self.max_margin));
                 self.entries_file.set_len(new_len as u64).map_err(RemoveError::Io)?;
                 self.entries_mmap = unsafe { MmapOptions::new().len(new_len).map_mut(&self.entries_file).map_err(RemoveError::Io)? };
+                self.margin = self.margin % self.max_margin;
             }
         } else {
             self.free_locations.add(entry_loc_buf).map_err(RemoveError::FixedAdd)?;
         }
+        drop(entry_loc_store);
         Ok(())
     }
 }

@@ -1,5 +1,6 @@
 use std::{fmt::Debug, fs::File};
 use binbuf::{bytes_ptr, fixed::Readable, impls::{arb_num, ArbNum}, BytesPtr, Entry, Fixed as _};
+use super::OpenMode;
 
 mod search;
 
@@ -92,7 +93,8 @@ pub enum CreateError {
 
 #[derive(Debug)]
 pub enum OpenError {
-
+    FixedOpen(super::fixed::OpenError),
+    SingleOpen(super::single::OpenError),
 }
 
 pub struct Searched {
@@ -128,6 +130,23 @@ pub struct NodeParent {
     branch: NodeBranch,
 }
 
+pub struct OpenFiles {
+    pub nodes: File,
+    pub free_ids: File,
+    pub header: File,
+}
+
+pub struct OpenMaxMargins {
+    pub nodes: u64,
+    pub free_ids: u64,
+}
+
+pub struct OpenConfig {
+    pub mode: OpenMode,
+    pub files: OpenFiles,
+    pub max_margins: OpenMaxMargins
+}
+
 pub struct Value<I: NodeId, K, V> {
     nodes: super::Fixed<Node<I, K, V>>,
     free_ids: super::Fixed<u64>,
@@ -136,36 +155,24 @@ pub struct Value<I: NodeId, K, V> {
 }
 
 impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, V> {
-    // Id must not be 0!
+    pub unsafe fn open(OpenConfig { mode, files, max_margins }: OpenConfig) -> Result<Self, OpenError> {
+        let nodes = super::Fixed::open(mode, files.nodes, max_margins.nodes)
+            .map_err(OpenError::FixedOpen)?;
 
-    pub unsafe fn create(
-        nodes: super::Fixed<Node<I, K, V>>,
-        free_ids: super::Fixed<u64>,
-        header_file: File,
-    ) -> Result<Self, CreateError> {
-        if nodes.len() != 0 { Err(CreateError::NodesNotEmpty)? }
-        if nodes.len() != 0 { Err(CreateError::FreeIdsNotEmpty)? }
-        let header = super::Single::create(
-            header_file,
-            &Header { root_id: None })
-            .map_err(CreateError::CreateHeader)?;
-        Ok(Self {
-            nodes,
-            free_ids,
-            header,
-            root_id: None,
-        })
-    }
+        let header = super::Single::open(
+            match mode {
+                OpenMode::New => super::single::OpenMode::New(&Header { root_id: None }),
+                OpenMode::Existing => super::single::OpenMode::Existing,
+            },
+            files.header,
+        )
+            .map_err(OpenError::SingleOpen)?;
 
-    pub unsafe fn open(
-        nodes: super::Fixed<Node<I, K, V>>,
-        free_ids: super::Fixed<u64>,
-        header: super::Single<Header>,
-    ) -> Result<Self, OpenError> {
         let root_id = header.get().root_id;
+
         Ok(Self {
             nodes,
-            free_ids,
+            free_ids: super::Fixed::open(mode, files.free_ids, max_margins.free_ids).map_err(OpenError::FixedOpen)?,
             header,
             root_id,
         })
@@ -271,7 +278,6 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
                         self.nodes.add(node_buf).map_err(AddError::AddNode)?
                     }
                 };
-                println!("ADDING: id = {id}");
 
                 let parent_buf = unsafe { self.node_buf_mut_by_id(parent.id) };
                 match parent.branch {
@@ -307,20 +313,15 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
 
     // Returns true if item doesn't exist.
     pub unsafe fn remove_searched(&mut self, searched: &SearchedFound) -> Result<(), RemoveError> {
-        println!("--- REMOVING NODE --- root_id = {:?}", self.root_id);
-
-        let node_buf = unsafe { self.node_buf_mut_by_id(searched.id) };
+        let node_buf: NodeBuf<bytes_ptr::Mut, I, K, V> = unsafe { self.node_buf_mut_by_id(searched.id) };
         let left_id = binbuf::fixed::decode::<I, _>(Node::buf_left_id(node_buf)).to_u64();
         let right_id = binbuf::fixed::decode::<I, _>(Node::buf_right_id(node_buf)).to_u64();
-        println!("Entry node: id = {}, left_id = {left_id}, right_id = {right_id}", searched.id);
         
         match (left_id, right_id, searched.parent) {
             (_, _, Some(parent)) if left_id == 0 || right_id == 0 => {
-                println!("Entry has parent and at most single branch");
                 self.remove_node(searched.id).map_err(RemoveError::RemoveNode)?;
 
                 let connect_id = if left_id == 0 { right_id } else { left_id };
-                println!("connect_id = {connect_id}");
                 let mut parent_buf = unsafe { self.node_buf_mut_by_id(parent.id) };
                 match parent.branch {
                     NodeBranch::Left => {
@@ -332,12 +333,10 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
                 }
             },
             (0, 0, None) => {
-                println!("Entry is root with no branches");
                 self.remove_node(searched.id).map_err(RemoveError::RemoveNode)?;
                 self.set_root_id(None);
             },
             (_, _, None) if left_id == 0 || right_id == 0 => {
-                println!("Entry is root with at most single branch");
                 self.remove_node(searched.id).map_err(RemoveError::RemoveNode)?;
 
                 let root_id = if left_id == 0 { right_id } else { left_id } - 1;
@@ -346,7 +345,6 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
 
             // The most complex case to handle: both left and right branches exist.
             (_, _, parent) => {
-                println!("Entry has both branches");
                 debug_assert_ne!(left_id, 0);
                 debug_assert_ne!(right_id, 0);
 
@@ -357,7 +355,7 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
                 let mut idx = 0;
                 loop {
                     idx += 1;
-                    if idx > 20 {
+                    if idx > 100 {
                         panic!("Loop stuck!");
                     }
 
@@ -366,7 +364,6 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
                     let node_left_id = binbuf::fixed::decode::<I, _>(node_left_id_buf).to_u64();
                     let node_right_id_buf = Node::<I, K, V>::buf_right_id(node_buf);
                     let node_right_id = binbuf::fixed::decode::<I, _>(node_right_id_buf).to_u64();
-                    println!("Testing node_id = {}, (left_id = {node_left_id}, right_id = {node_right_id})", node_id + 1);
                     if node_left_id == 0 {
                         I::from_u64(node_right_id)
                             .write_to(Node::buf_left_id(unsafe { self.node_buf_mut_by_id(node_parent_id) }));
@@ -378,7 +375,6 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
 
                         match parent {
                             Some(parent) => {
-                                println!("Parent exists.");
                                 let parent_buf = unsafe { self.node_buf_mut_by_id(parent.id) };
                                 match parent.branch {
                                     NodeBranch::Left => {
@@ -390,14 +386,12 @@ impl<I: NodeId, K: binbuf::fixed::Decode + Debug, V: binbuf::Fixed> Value<I, K, 
                                 }
                             },
                             None => {
-                                println!("Parent doesn't exist.");
                                 self.set_root_id(Some(node_id));
                             }
                         }
 
                         break;
                     } else {
-                        println!("Test node left id != 0. Continue");
                         node_parent_id = node_id;
                         node_id = node_left_id - 1;
                     }

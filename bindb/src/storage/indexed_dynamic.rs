@@ -1,4 +1,6 @@
 use std::{fs::File, path::Path};
+use super::OpenMode;
+
 pub use super::dynamic::EntryId as DynamicEntryId;
 
 type IndexData = DynamicEntryId;
@@ -20,13 +22,29 @@ pub enum RemoveError {
 
 #[derive(Debug)]
 pub enum OpenError {
-    // FixedOpen(super::fixed::OpenError),
+    DynamicOpen(super::dynamic::OpenError),
+    FixedOpen(super::fixed::OpenError),
 }
 
-// #[derive(Debug)]
-// pub enum CreateError {
-//     FixedCreate(super::fixed::CreateError),
-// }
+pub struct OpenFiles {
+    pub raw_entries: File,
+    pub raw_free_locations: File,
+    pub indices: File,
+    pub free_ids: File,
+}
+
+pub struct OpenMaxMargins {
+    pub raw_entries: u64,
+    pub raw_free_locations: u64,
+    pub indices: u64,
+    pub free_ids: u64,
+}
+
+pub struct OpenConfig {
+    pub mode: OpenMode,
+    pub files: OpenFiles,
+    pub max_margins: OpenMaxMargins,
+}
 
 pub struct Value<E> {
     raw: super::Dynamic<E>,
@@ -35,19 +53,15 @@ pub struct Value<E> {
 }
 
 impl<E: binbuf::Dynamic> Value<E> {
-    // pub unsafe fn open_folder<P: AsRef<Path>>(dir: P) {
-    //     Self::open(
-    //         super::Dynamic::op,
-    //         indices,
-    //         free_ids
-    //     )
-    // }
-
-    pub unsafe fn open(raw: super::Dynamic<E>, indices: super::Fixed<IndexData>, free_ids: super::Fixed<u64>) -> Result<Self, OpenError> {
+    pub unsafe fn open(OpenConfig { mode, files, max_margins }: OpenConfig) -> Result<Self, OpenError> {
         Ok(Self {
-            raw,
-            indices,
-            free_ids
+            raw: super::Dynamic::open(super::dynamic::OpenConfig {
+                mode,
+                files: super::dynamic::OpenFiles { entries: files.raw_entries, free_locations: files.raw_free_locations },
+                max_margins: super::dynamic::OpenMaxMargins { entries: max_margins.raw_entries, free_locations: max_margins.raw_free_locations },
+            }).map_err(OpenError::DynamicOpen)?,
+            indices: super::Fixed::open(mode, files.indices, max_margins.indices).map_err(OpenError::FixedOpen)?,
+            free_ids: super::Fixed::open(mode, files.free_ids, max_margins.free_ids).map_err(OpenError::FixedOpen)?,
         })
     }
 
@@ -102,24 +116,17 @@ impl<E: binbuf::Dynamic> Value<E> {
         Ok(id)
     }
 
+    pub fn free_locations_len(&self) -> u64 {
+        self.raw.free_locations_len()
+    }
+
     pub unsafe fn remove(&mut self, id: u64) -> Result<(), RemoveError> {
         let raw_id = binbuf::fixed::decode::<IndexData, _>(self.indices.buf_unchecked(id));
-        println!("remove raw_id");
         self.raw.remove(raw_id).map_err(RemoveError::RawRemove)?;
-        println!("raw removed");
 
         if self.indices.remove_if_last(id).map_err(RemoveError::RemoveLastIndex)? {
             self.free_ids.add(&id).map_err(RemoveError::AddFreeId)?;
-            println!("free_ids added");
         }
-
-        // if id == self.indices.last_id() {
-        //     self.indices.remove_last().map_err(RemoveError::RemoveLastIndex)?;
-        //     println!("indices removed last");
-        // } else {
-        //     self.free_ids.add(&id).map_err(RemoveError::AddFreeId)?;
-        //     println!("free_ids added");
-        // }
         Ok(())
     }
 }

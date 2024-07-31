@@ -3,6 +3,7 @@ use crate::utils::{slice_to_array, slice_to_array_mut};
 use std::{fs::File, marker::PhantomData, path::Path};
 use memmap2::{MmapAsRawDesc, MmapMut, MmapOptions};
 pub use header::Value as Header;
+use super::OpenMode;
 
 pub mod header;
 
@@ -37,6 +38,12 @@ pub enum OpenError {
     Io(std::io::Error),
 }
 
+pub struct OpenConfig {
+    pub mode: OpenMode,
+    pub file: File,
+    pub max_margin: u64,
+}
+
 pub struct Value<E> {
     next_entry_id: u64,
     file: File,
@@ -47,30 +54,23 @@ pub struct Value<E> {
 }
 
 impl<E: binbuf::Fixed> Value<E> {
-    pub unsafe fn create(file: File, max_margin: u64) -> Result<Self, CreateError> {
+    pub unsafe fn open(mode: OpenMode, file: File, max_margin: u64) -> Result<Self, OpenError> {
         let header_len = Header::LEN;
-        file.set_len(header_len as u64).map_err(CreateError::Io)?;
-        let mut file_map = MmapMut::map_mut(&file).map_err(CreateError::Io)?;
-        unsafe { binbuf::fixed::encode_ptr(
-            bytes_ptr::Mut::from_slice(&mut file_map[0 .. header_len]),
-            &Header { next_entry_id: 0 }
-        ); }
-        
-        Ok(Self {
-            next_entry_id: 0,
-            margin: 0,
-            max_margin,
-            file,
-            file_map,
-            _marker: PhantomData
-        })
-    }
-
-    pub unsafe fn open(file: File, max_margin: u64) -> Result<Self, OpenError> {
-        let file_map = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
-        let header_len = Header::LEN;
+        if let OpenMode::New = &mode {
+            file.set_len(header_len as u64).map_err(OpenError::Io)?;
+        }
+        let mut file_map = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
         let ptr = bytes_ptr::Const::new(file_map[0 .. header_len].as_ptr(), header_len);
-        let next_entry_id = binbuf::fixed::decode(Header::buf(ptr).next_entry_id());
+        let next_entry_id = match mode {
+            OpenMode::Existing => binbuf::fixed::decode(Header::buf(ptr).next_entry_id()),
+            OpenMode::New => unsafe {
+                binbuf::fixed::encode_ptr(
+                    bytes_ptr::Mut::from_slice(&mut file_map[0 .. header_len]),
+                    &Header { next_entry_id: 0 }
+                );
+                0
+            }
+        };
         Ok(Self {
             next_entry_id,
             margin: 0,

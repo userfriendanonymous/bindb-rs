@@ -17,17 +17,17 @@ pub fn output(item: &ItemStruct, lib: &syn::Path) -> super::Output {
                 let ty = &field.ty;
                 encode_fn = quote! {
                     #encode_fn
-                    let len = #lib::dynamic::encode_ptr(buf.0.range_from(cursor), &self.#ident);
+                    let len = #lib::dynamic::encode_ptr(#lib::BytesPtr::range_from(buf.0, cursor), &self.#ident);
                     cursor += len;
                 };
                 buf_len_fn = quote! {
                     #buf_len_fn
-                    let len = #lib::dynamic::ptr_len::<#ty>(buf.0.range_from(cursor));
+                    let len = #lib::dynamic::ptr_len::<#ty>(#lib::BytesPtr::range_from(buf.0, cursor));
                     cursor += len;
                 };
                 len_fn = quote! {
                     #len_fn
-                    let len = <#ty as #lib::dynamic::Encode>::len(&self.#ident);
+                    let len = <#ty as #lib::Dynamic>::len(&self.#ident);
                     cursor += len;
                 };
             }
@@ -59,17 +59,17 @@ pub fn output(item: &ItemStruct, lib: &syn::Path) -> super::Output {
                 let ty = &field.ty;
                 encode_fn = quote! {
                     #encode_fn
-                    let len = #lib::dynamic::encode_ptr(buf.0.range_from(cursor), &self.#index);
+                    let len = #lib::dynamic::encode_ptr(#lib::BytesPtr::range_from(buf.0, cursor), &self.#index);
                     cursor += len;
                 };
                 buf_len_fn = quote! {
                     #buf_len_fn
-                    let len = #lib::dynamic::ptr_len::<#ty>(buf.0.range_from(cursor));
+                    let len = #lib::dynamic::ptr_len::<#ty>(#lib::BytesPtr::range_from(buf.0, cursor));
                     cursor += len;
                 };
                 len_fn = quote! {
                     #len_fn
-                    let len = <#ty as #lib::dynamic::Encode>::len(&self.#index);
+                    let len = <#ty as #lib::Dynamic>::len(&self.#index);
                     cursor += len;
                 };
             }

@@ -34,7 +34,7 @@ pub fn get(item: &Item, lib: &syn::Path) -> Value {
                                                 #vis fn #fn_ident<P: #lib::dynamic::Ptr>(buf: #lib::dynamic::Buf<Self, P>) -> #lib::dynamic::Buf<#ty, P> {
                                                     let mut cursor = 0;
                                                     #len_fn
-                                                    <#ty as #lib::Dynamic>::buf(unsafe { #lib::dynamic::Ptr::range_from(buf.0, cursor) })
+                                                    unsafe { <#ty as #lib::Entry>::buf(#lib::dynamic::Ptr::range_from(buf.0, cursor)) }
                                                 }
                                             }
                                         },

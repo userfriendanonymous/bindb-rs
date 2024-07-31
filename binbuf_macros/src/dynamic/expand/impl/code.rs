@@ -34,7 +34,7 @@ pub fn output(
         let decode_fn = de::output(item, lib);
         quote! {
             impl #impl_generics #lib::dynamic::Decode for #self_ty #where_clause {
-                fn decode(buf: #lib::dynamic::BufConst<Self>) -> Self {
+                fn decode(buf: #lib::dynamic::BufConst<Self>) -> (Self, usize) {
                     #decode_fn
                 }
             }
@@ -42,8 +42,8 @@ pub fn output(
     });
 
     quote! {
-        impl #impl_generics #lib::dynamic::Encode for #self_ty #where_clause {
-            fn encode(&self, mut buf: #lib::dynamic::BufMut<Self>) {
+        impl #impl_generics #lib::Dynamic for #self_ty #where_clause {
+            fn encode(&self, mut buf: #lib::dynamic::BufMut<Self>) -> usize {
                 #encode_fn
             }
             fn buf_len(buf: #lib::dynamic::BufConst<Self>) -> usize {

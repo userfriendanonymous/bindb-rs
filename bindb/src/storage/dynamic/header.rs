@@ -3,7 +3,9 @@ use std::marker::PhantomData;
 binbuf::fixed! {
     #[derive(Clone, Debug)]
     pub struct Value {
+        #[lens(pub buf_len)]
         pub len: u64, // count of items in collection
+        #[lens(pub buf_bytes_len)]
         pub bytes_len: u64, // how many bytes taken by storing items in collection (only items, not header)
     }
 
