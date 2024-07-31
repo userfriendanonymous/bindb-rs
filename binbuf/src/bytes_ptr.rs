@@ -122,7 +122,7 @@ impl<'a> From<Mut> for &'a mut [u8] {
 impl Instance for Mut {
     unsafe fn range_at(self, at: usize, len: usize) -> Self {
         Self {
-            ptr: self.slice().get_unchecked_mut(at .. at + len).as_mut_ptr(),
+            ptr: self.slice()[at .. at + len].as_mut_ptr(),
             len,
         }
     }
