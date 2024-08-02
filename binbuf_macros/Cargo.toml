@@ -2,6 +2,8 @@
 name = "binbuf_macros"
 version = "0.1.0"
 edition = "2021"
+description = "Binbuf macros."
+license = "MIT"
 
 [lib]
 proc-macro = true

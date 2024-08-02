@@ -2,6 +2,11 @@
 name = "binbuf"
 version = "0.1.0"
 edition = "2021"
+description = "Binbuf."
+license = "MIT"
+
+[lib]
+name = "binbuf"
 
 [dependencies]
-macros = { version = "0.1.0", path = "../binbuf_macros", package = "binbuf_macros" }
+macros = { path = "../binbuf_macros", package = "binbuf_macros" }

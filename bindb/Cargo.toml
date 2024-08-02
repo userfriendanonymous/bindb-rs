@@ -2,6 +2,11 @@
 name = "bindb"
 version = "0.1.0"
 edition = "2021"
+description = "Bindb."
+license = "MIT"
+
+[lib]
+name = "bindb"
 
 # [profile.test]
 # lto = true
