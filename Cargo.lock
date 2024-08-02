@@ -29,6 +29,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bindb"
+version = "0.1.0"
+dependencies = [
+ "binbuf",
+ "extend",
+ "memmap2",
+ "rand",
+ "to_phantom",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -118,17 +129,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
-]
-
-[[package]]
-name = "lib"
-version = "0.1.0"
-dependencies = [
- "binbuf",
- "extend",
- "memmap2",
- "rand",
- "to_phantom",
 ]
 
 [[package]]

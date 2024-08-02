@@ -31,17 +31,19 @@ pub struct Value<T> {
 
 impl<T: binbuf::Dynamic> Value<T> {
     pub unsafe fn open(mode: OpenMode<impl binbuf::dynamic::Readable<T>>, file: File) -> Result<Self, OpenError> {
-        let mut mmap = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
-        let len = match mode {
+        let (len, mmap) = match mode {
             OpenMode::New(value) => {
                 let len = value.len();
                 file.set_len(len as u64).map_err(OpenError::Io)?;
+                let mut mmap = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
                 let buf = unsafe { T::buf(bytes_ptr::Mut::from_slice(&mut mmap[0 .. ])) };
                 value.write_to(buf);
-                len
+                (len, mmap)
             },
             OpenMode::Existing => {
-                binbuf::dynamic::ptr_len::<T>(bytes_ptr::Const::from_slice(&mmap[0 .. ]))
+                let mut mmap = MmapMut::map_mut(&file).map_err(OpenError::Io)?;
+                let len = binbuf::dynamic::ptr_len::<T>(bytes_ptr::Const::from_slice(&mmap[0 .. ]));
+                (len, mmap)
             }
         };
         Ok(Self { file, mmap, len, _marker: PhantomData })
