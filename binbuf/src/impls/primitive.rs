@@ -24,11 +24,13 @@ macro_rules! impl_instance_num {
 }
 
 impl_instance_num!(u8, U8Buf, 1);
+impl_instance_num!(u16, U16Buf, 2);
 impl_instance_num!(u32, U32Buf, 4);
 impl_instance_num!(u64, U64Buf, 8);
 impl_instance_num!(u128, U128Buf, 16);
 
 impl_instance_num!(i8, I8Buf, 1);
+impl_instance_num!(i16, I16Buf, 2);
 impl_instance_num!(i32, I32Buf, 4);
 impl_instance_num!(i64, I64Buf, 8);
 impl_instance_num!(i128, I128Buf, 16);
