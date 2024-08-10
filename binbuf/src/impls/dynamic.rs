@@ -1,5 +1,5 @@
 use crate::{bytes_ptr, dynamic::{self}, BytesPtr, Dynamic};
-use super::{arb_num, ArbNum};
+use super::{arb_num::{self, Base}, ArbNum};
 
 dynamic! {
     buf! { pub struct SliceU8Buf<'a, P>(&'a [u8], P); }
@@ -156,6 +156,20 @@ dynamic! {
     pub struct StringCLL<const LL: usize>(String);
     buf! { pub struct StringCLLBuf<P, const LL: usize>(StringCLL<LL>, P); }
     impl<const LL: usize> I for StringCLL<LL> { type Buf<P> = StringCLLBuf<P, LL>; }
+}
+
+impl<const LL: usize> StringCLL<LL> {
+    fn try_from_string(value: String) -> Option<Self> {
+        if (value.len() as u64).fits_in_bytes(LL) {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    fn from_string(value: String) -> Self {
+        Self::try_from_string(value).unwrap()
+    }
 }
 
 impl<const LL: usize> Dynamic for StringCLL<LL> {

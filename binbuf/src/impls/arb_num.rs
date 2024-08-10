@@ -8,15 +8,18 @@
 
 // // Value<u32, 4> Value<u64, 3>
 
+use std::cmp::Ordering;
+
 use crate::utils::slice_to_array;
 
-pub trait Base {
+pub trait Base: PartialOrd + Ord + PartialEq + Eq {
     const LEN: usize;
     type Bytes;
     fn to_le_bytes(&self) -> Self::Bytes;
     fn from_le_bytes(bytes: Self::Bytes) -> Self;
     fn bytes_to_slice(bytes: &Self::Bytes) -> &[u8];
     unsafe fn slice_to_bytes(slice: &[u8]) -> Self::Bytes;
+    fn fits_in_bytes(&self, len: usize) -> bool;
 }
 
 // pub trait BaseU64: Base {
@@ -39,6 +42,13 @@ impl Base for u64 {
     unsafe fn slice_to_bytes(slice: &[u8]) -> Self::Bytes {
         *slice_to_array(slice)
     }
+    fn fits_in_bytes(&self, len: usize) -> bool {
+        if len < 8 {
+            *self < 2u64.pow((len * 8) as _)
+        } else {
+            true
+        }
+    }
 }
 
 // impl BaseU64 for u64 {
@@ -57,12 +67,27 @@ fixed! {
     }
 }
 
-impl<const LEN: usize, T> Value<LEN, T> {
+impl<const LEN: usize, T: Base> Value<LEN, T> {
     pub fn new(value: T) -> Self {
+        if !value.fits_in_bytes(LEN) {
+            panic!("Value is too big!");
+        }
         Self(value)
     }
 
+    pub fn try_new(value: T) -> Option<Self> {
+        if value.fits_in_bytes(LEN) {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
     pub fn unwrap(self) -> T {
+        self.0
+    }
+
+    pub fn get(self) -> T {
         self.0
     }
 }
