@@ -27,6 +27,15 @@ impl NodeId for u64 {
     }
 }
 
+impl NodeId for u16 {
+    fn from_u64(value: u64) -> Self {
+        value as _
+    }
+    fn to_u64(self) -> u64 {
+        self as _
+    }
+}
+
 binbuf::fixed! {
     pub struct Node<I: NodeId, K, V> {
         #[lens(buf_key)]

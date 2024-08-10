@@ -74,6 +74,7 @@ impl<T: crate::Fixed> Instance for T {
 
 impl<T: crate::fixed::Decode> Decode for T {
     default fn decode(buf: BufConst<Self>) -> (Self, usize) {
+        let buf = unsafe { T::buf(T::buf_ptr(buf).range_at(0, T::LEN)) };
         (<T as crate::fixed::Decode>::decode(buf), T::LEN)
     }
 }
