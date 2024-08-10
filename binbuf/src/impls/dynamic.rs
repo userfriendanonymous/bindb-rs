@@ -170,6 +170,16 @@ impl<const LL: usize> StringCLL<LL> {
     fn from_string(value: String) -> Self {
         Self::try_from_string(value).unwrap()
     }
+    
+    fn to_string(self) -> String {
+        self.0
+    }
+}
+
+impl<const LL: usize> Into<String> for StringCLL<LL> {
+    fn into(self) -> String {
+        self.0
+    }
 }
 
 impl<const LL: usize> Dynamic for StringCLL<LL> {
