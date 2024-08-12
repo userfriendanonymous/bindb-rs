@@ -159,7 +159,7 @@ dynamic! {
 }
 
 impl<const LL: usize> StringCLL<LL> {
-    fn try_from_string(value: String) -> Option<Self> {
+    pub fn try_from_string(value: String) -> Option<Self> {
         if (value.len() as u64).fits_in_bytes(LL) {
             Some(Self(value))
         } else {
@@ -167,11 +167,11 @@ impl<const LL: usize> StringCLL<LL> {
         }
     }
 
-    fn from_string(value: String) -> Self {
+    pub fn from_string(value: String) -> Self {
         Self::try_from_string(value).unwrap()
     }
     
-    fn to_string(self) -> String {
+    pub fn to_string(self) -> String {
         self.0
     }
 }
